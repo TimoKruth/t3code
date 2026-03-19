@@ -19,6 +19,8 @@ import {
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useStore } from "../store";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
+import { resolveSidebarNewThreadEnvMode } from "../components/Sidebar.logic";
+import { useAppSettings } from "../appSettings";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
@@ -27,6 +29,37 @@ const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
 const DIFF_INLINE_DEFAULT_WIDTH = "clamp(28rem,48vw,44rem)";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
+const EMBEDDED_MODE = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("embedded") === "1") return true;
+    const hash = window.location.hash;
+    if (hash.includes("embedded=1")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+})();
+
+declare global {
+  interface Window {
+    webkit?: {
+      messageHandlers?: {
+        cmuxThreadSync?: {
+          postMessage: (message: { threadId: string }) => void;
+        };
+      };
+    };
+  }
+}
+
+const postThreadIdToEmbeddedHost = (threadId: ThreadId) => {
+  try {
+    window.webkit?.messageHandlers?.cmuxThreadSync?.postMessage({ threadId });
+  } catch {
+    // Ignore host bridge failures outside the embedded cmux environment.
+  }
+};
 
 const DiffPanelSheet = (props: {
   children: ReactNode;
@@ -167,6 +200,7 @@ function ChatThreadRouteView() {
     select: (params) => ThreadId.makeUnsafe(params.threadId),
   });
   const search = Route.useSearch();
+  const projects = useStore((store) => store.projects);
   const threadExists = useStore((store) => store.threads.some((thread) => thread.id === threadId));
   const draftThreadExists = useComposerDraftStore((store) =>
     Object.hasOwn(store.draftThreadsByThreadId, threadId),
@@ -174,6 +208,7 @@ function ChatThreadRouteView() {
   const routeThreadExists = threadExists || draftThreadExists;
   const diffOpen = search.diff === "1";
   const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
+  const { settings: appSettings } = useAppSettings();
   // TanStack Router keeps active route components mounted across param-only navigations
   // unless remountDeps are configured, so this stays warm across thread switches.
   const [hasOpenedDiff, setHasOpenedDiff] = useState(diffOpen);
@@ -206,11 +241,38 @@ function ChatThreadRouteView() {
       return;
     }
 
+    if (EMBEDDED_MODE && !routeThreadExists) {
+      const projectId = projects[0]?.id;
+      if (!projectId) {
+        return;
+      }
+
+      useComposerDraftStore.getState().ensureDraftThread(threadId, {
+        projectId,
+        createdAt: new Date().toISOString(),
+        envMode: resolveSidebarNewThreadEnvMode({
+          defaultEnvMode: appSettings.defaultThreadEnvMode,
+        }),
+      });
+      return;
+    }
+
     if (!routeThreadExists) {
       void navigate({ to: "/", replace: true });
       return;
     }
-  }, [navigate, routeThreadExists, threadsHydrated, threadId]);
+  }, [
+    appSettings.defaultThreadEnvMode,
+    navigate,
+    projects,
+    routeThreadExists,
+    threadId,
+    threadsHydrated,
+  ]);
+
+  useEffect(() => {
+    postThreadIdToEmbeddedHost(threadId);
+  }, [threadId]);
 
   if (!threadsHydrated || !routeThreadExists) {
     return null;
