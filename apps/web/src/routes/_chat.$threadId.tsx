@@ -22,6 +22,8 @@ import { Sheet, SheetPopup } from "../components/ui/sheet";
 import { resolveSidebarNewThreadEnvMode } from "../components/Sidebar.logic";
 import { useAppSettings } from "../appSettings";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { DEFAULT_RUNTIME_MODE } from "../types";
+import { getLatestWelcome } from "../wsNativeApi";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
 const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
@@ -38,6 +40,22 @@ const EMBEDDED_MODE = (() => {
     return false;
   } catch {
     return false;
+  }
+})();
+
+/**
+ * Read the optional `projectCwd` query parameter that cmux passes when
+ * opening a chat panel so that the embedded t3code instance can bind the
+ * thread to the correct workspace project.
+ */
+const EMBEDDED_PROJECT_CWD: string | null = (() => {
+  if (!EMBEDDED_MODE) return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const cwd = params.get("projectCwd");
+    return cwd && cwd.trim().length > 0 ? cwd.trim() : null;
+  } catch {
+    return null;
   }
 })();
 
@@ -242,17 +260,44 @@ function ChatThreadRouteView() {
     }
 
     if (EMBEDDED_MODE && !routeThreadExists) {
-      const projectId = projects[0]?.id;
+      // Resolve the correct project for this embedded chat.  Priority:
+      // 1. projectCwd query param from cmux → match project by cwd
+      // 2. bootstrapProjectId from the server welcome message
+      // 3. First available project (legacy fallback)
+      let projectId: string | undefined;
+
+      if (EMBEDDED_PROJECT_CWD && projects.length > 0) {
+        const match = projects.find((p) => p.cwd === EMBEDDED_PROJECT_CWD);
+        projectId = match?.id;
+      }
+
+      if (!projectId) {
+        const welcome = getLatestWelcome();
+        if (welcome?.bootstrapProjectId) {
+          const exists = projects.some((p) => p.id === welcome.bootstrapProjectId);
+          if (exists) {
+            projectId = welcome.bootstrapProjectId;
+          }
+        }
+      }
+
+      if (!projectId) {
+        projectId = projects[0]?.id;
+      }
+
       if (!projectId) {
         return;
       }
 
       useComposerDraftStore.getState().ensureDraftThread(threadId, {
-        projectId,
+        projectId: projectId as typeof projects[0]["id"],
         createdAt: new Date().toISOString(),
         envMode: resolveSidebarNewThreadEnvMode({
           defaultEnvMode: appSettings.defaultThreadEnvMode,
         }),
+        runtimeMode: DEFAULT_RUNTIME_MODE,
+        branch: null,
+        worktreePath: null,
       });
       return;
     }
