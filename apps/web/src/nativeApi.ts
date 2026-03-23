@@ -1,14 +1,19 @@
 import type { NativeApi } from "@t3tools/contracts";
 
+import { shouldPreferConfiguredWebSocket } from "./backendUrl";
 import { createWsNativeApi } from "./wsNativeApi";
 
 let cachedApi: NativeApi | undefined;
+
+export function resetNativeApiForTests(): void {
+  cachedApi = undefined;
+}
 
 export function readNativeApi(): NativeApi | undefined {
   if (typeof window === "undefined") return undefined;
   if (cachedApi) return cachedApi;
 
-  if (window.nativeApi) {
+  if (!shouldPreferConfiguredWebSocket() && window.nativeApi) {
     cachedApi = window.nativeApi;
     return cachedApi;
   }

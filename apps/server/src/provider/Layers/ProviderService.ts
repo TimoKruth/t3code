@@ -122,6 +122,27 @@ function readPersistedCwd(
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function sessionConfiguredRuntimePayload(
+  event: ProviderRuntimeEvent,
+): Record<string, unknown> | undefined {
+  if (event.type !== "session.configured") {
+    return undefined;
+  }
+  const { config } = event.payload;
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return undefined;
+  }
+  const record = config as Record<string, unknown>;
+  const payload: Record<string, unknown> = {};
+  if (typeof record.cwd === "string") {
+    payload.cwd = record.cwd;
+  }
+  if (typeof record.model === "string") {
+    payload.model = record.model;
+  }
+  return Object.keys(payload).length > 0 ? payload : undefined;
+}
+
 const makeProviderService = (options?: ProviderServiceLiveOptions) =>
   Effect.gen(function* () {
     const analytics = yield* Effect.service(AnalyticsService);
@@ -167,7 +188,36 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
     );
 
     const processRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
-      publishRuntimeEvent(event);
+      Effect.gen(function* () {
+        if (event.type === "session.started" || event.type === "session.configured") {
+          yield* directory
+            .upsert({
+              threadId: event.threadId,
+              provider: event.provider,
+              ...(event.type === "session.started" && event.payload.resume !== undefined
+                ? { resumeCursor: event.payload.resume }
+                : {}),
+              runtimePayload: {
+                lastRuntimeEvent: event.type,
+                lastRuntimeEventAt: event.createdAt,
+                ...(sessionConfiguredRuntimePayload(event) ?? {}),
+              },
+            })
+            .pipe(
+              Effect.tapError((error) =>
+                Effect.logWarning("failed to persist provider runtime event state", {
+                  eventType: event.type,
+                  threadId: event.threadId,
+                  provider: event.provider,
+                  error,
+                }),
+              ),
+              Effect.orElseSucceed(() => undefined),
+            );
+        }
+
+        yield* publishRuntimeEvent(event);
+      });
 
     const worker = Effect.forever(
       Queue.take(runtimeEventQueue).pipe(Effect.flatMap(processRuntimeEvent)),
@@ -221,7 +271,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
           ...(persistedProviderOptions ? { providerOptions: persistedProviderOptions } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
-          runtimeMode: input.binding.runtimeMode ?? "full-access",
+          runtimeMode: input.binding.runtimeMode ?? "approval-required",
         });
         if (resumed.provider !== adapter.provider) {
           return yield* toValidationError(

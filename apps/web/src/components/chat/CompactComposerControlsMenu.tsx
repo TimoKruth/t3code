@@ -1,6 +1,6 @@
 import {
-  type CodexReasoningEffort,
   type ProviderKind,
+  type ProviderReasoningEffort,
   RuntimeMode,
   ProviderInteractionMode,
 } from "@t3tools/contracts";
@@ -19,28 +19,38 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 
+function getReasoningLabel(provider: ProviderKind, effort: ProviderReasoningEffort): string {
+  switch (effort) {
+    case "xhigh":
+      return "Extra High";
+    case "max":
+      return provider === "claudeCode" ? "Max" : "Extra High";
+    case "high":
+      return "High";
+    case "medium":
+      return "Medium";
+    case "low":
+    default:
+      return "Low";
+  }
+}
+
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   activePlan: boolean;
   interactionMode: ProviderInteractionMode;
   planSidebarOpen: boolean;
   runtimeMode: RuntimeMode;
-  selectedEffort: CodexReasoningEffort | null;
+  selectedEffort: ProviderReasoningEffort | null;
   selectedProvider: ProviderKind;
   selectedCodexFastModeEnabled: boolean;
-  reasoningOptions: ReadonlyArray<CodexReasoningEffort>;
-  onEffortSelect: (effort: CodexReasoningEffort) => void;
+  reasoningOptions: ReadonlyArray<ProviderReasoningEffort>;
+  onEffortSelect: (effort: ProviderReasoningEffort) => void;
   onCodexFastModeChange: (enabled: boolean) => void;
   onToggleInteractionMode: () => void;
   onTogglePlanSidebar: () => void;
   onToggleRuntimeMode: () => void;
 }) {
-  const defaultReasoningEffort = getDefaultReasoningEffort("codex");
-  const reasoningLabelByOption: Record<CodexReasoningEffort, string> = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "Extra High",
-  };
+  const defaultReasoningEffort = getDefaultReasoningEffort(props.selectedProvider);
 
   return (
     <Menu>
@@ -72,7 +82,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
               >
                 {props.reasoningOptions.map((effort) => (
                   <MenuRadioItem key={effort} value={effort}>
-                    {reasoningLabelByOption[effort]}
+                    {getReasoningLabel(props.selectedProvider, effort)}
                     {effort === defaultReasoningEffort ? " (default)" : ""}
                   </MenuRadioItem>
                 ))}

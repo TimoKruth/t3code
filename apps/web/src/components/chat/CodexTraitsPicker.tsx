@@ -1,4 +1,4 @@
-import { type CodexReasoningEffort } from "@t3tools/contracts";
+import { type ProviderKind, type ProviderReasoningEffort } from "@t3tools/contracts";
 import { getDefaultReasoningEffort } from "@t3tools/shared/model";
 import { memo, useState } from "react";
 import { ChevronDownIcon } from "lucide-react";
@@ -13,22 +13,33 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 
+function getReasoningLabel(provider: ProviderKind, effort: ProviderReasoningEffort): string {
+  switch (effort) {
+    case "xhigh":
+      return "Extra High";
+    case "max":
+      return provider === "claudeCode" ? "Max" : "Extra High";
+    case "high":
+      return "High";
+    case "medium":
+      return "Medium";
+    case "low":
+    default:
+      return "Low";
+  }
+}
+
 export const CodexTraitsPicker = memo(function CodexTraitsPicker(props: {
-  effort: CodexReasoningEffort;
+  provider: ProviderKind;
+  effort: ProviderReasoningEffort;
   fastModeEnabled: boolean;
-  options: ReadonlyArray<CodexReasoningEffort>;
-  onEffortChange: (effort: CodexReasoningEffort) => void;
+  options: ReadonlyArray<ProviderReasoningEffort>;
+  onEffortChange: (effort: ProviderReasoningEffort) => void;
   onFastModeChange: (enabled: boolean) => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const defaultReasoningEffort = getDefaultReasoningEffort("codex");
-  const reasoningLabelByOption: Record<CodexReasoningEffort, string> = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "Extra High",
-  };
-  const effortLabel = reasoningLabelByOption[props.effort];
+  const defaultReasoningEffort = getDefaultReasoningEffort(props.provider);
+  const effortLabel = getReasoningLabel(props.provider, props.effort);
 
   return (
     <Menu
@@ -75,25 +86,29 @@ export const CodexTraitsPicker = memo(function CodexTraitsPicker(props: {
           >
             {props.options.map((effort) => (
               <MenuRadioItem key={effort} value={effort}>
-                {reasoningLabelByOption[effort]}
+                {getReasoningLabel(props.provider, effort)}
                 {effort === defaultReasoningEffort ? " (default)" : ""}
               </MenuRadioItem>
             ))}
           </MenuRadioGroup>
         </MenuGroup>
-        <MenuDivider />
-        <MenuGroup>
-          <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Fast Mode</div>
-          <MenuRadioGroup
-            value={props.fastModeEnabled ? "on" : "off"}
-            onValueChange={(value) => {
-              props.onFastModeChange(value === "on");
-            }}
-          >
-            <MenuRadioItem value="off">off</MenuRadioItem>
-            <MenuRadioItem value="on">on</MenuRadioItem>
-          </MenuRadioGroup>
-        </MenuGroup>
+        {props.provider === "codex" ? (
+          <>
+            <MenuDivider />
+            <MenuGroup>
+              <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Fast Mode</div>
+              <MenuRadioGroup
+                value={props.fastModeEnabled ? "on" : "off"}
+                onValueChange={(value) => {
+                  props.onFastModeChange(value === "on");
+                }}
+              >
+                <MenuRadioItem value="off">off</MenuRadioItem>
+                <MenuRadioItem value="on">on</MenuRadioItem>
+              </MenuRadioGroup>
+            </MenuGroup>
+          </>
+        ) : null}
       </MenuPopup>
     </Menu>
   );

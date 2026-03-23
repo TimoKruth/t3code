@@ -16,6 +16,12 @@ describe("normalizeModelSlug", () => {
     expect(normalizeModelSlug("gpt-5.3")).toBe("gpt-5.3-codex");
   });
 
+  it("maps Claude aliases to the current built-in slugs", () => {
+    expect(normalizeModelSlug("sonnet", "claudeCode")).toBe("claude-sonnet-4-6");
+    expect(normalizeModelSlug("opus", "claudeCode")).toBe("claude-opus-4-6");
+    expect(normalizeModelSlug("haiku", "claudeCode")).toBe("claude-haiku-4-5-20251001");
+  });
+
   it("returns null for empty or missing values", () => {
     expect(normalizeModelSlug("")).toBeNull();
     expect(normalizeModelSlug("   ")).toBeNull();
@@ -50,9 +56,21 @@ describe("resolveModelSlug", () => {
       expect(resolveModelSlug(model.slug)).toBe(model.slug);
     }
   });
+
+  it("resolves Claude built-in model options for the Claude provider", () => {
+    for (const model of MODEL_OPTIONS_BY_PROVIDER.claudeCode) {
+      expect(resolveModelSlug(model.slug, "claudeCode")).toBe(model.slug);
+    }
+  });
+
   it("keeps codex defaults for backward compatibility", () => {
     expect(getDefaultModel()).toBe(DEFAULT_MODEL_BY_PROVIDER.codex);
     expect(getModelOptions()).toEqual(MODEL_OPTIONS_BY_PROVIDER.codex);
+  });
+
+  it("returns Claude defaults for the Claude provider", () => {
+    expect(getDefaultModel("claudeCode")).toBe(DEFAULT_MODEL_BY_PROVIDER.claudeCode);
+    expect(getModelOptions("claudeCode")).toEqual(MODEL_OPTIONS_BY_PROVIDER.claudeCode);
   });
 });
 
@@ -60,10 +78,15 @@ describe("getReasoningEffortOptions", () => {
   it("returns codex reasoning options for codex", () => {
     expect(getReasoningEffortOptions("codex")).toEqual(["xhigh", "high", "medium", "low"]);
   });
+
+  it("returns Claude reasoning options for Claude Code", () => {
+    expect(getReasoningEffortOptions("claudeCode")).toEqual(["max", "high", "medium", "low"]);
+  });
 });
 
 describe("getDefaultReasoningEffort", () => {
   it("returns provider-scoped defaults", () => {
     expect(getDefaultReasoningEffort("codex")).toBe("high");
+    expect(getDefaultReasoningEffort("claudeCode")).toBe("high");
   });
 });

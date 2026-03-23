@@ -27,7 +27,7 @@ export const ORCHESTRATION_WS_CHANNELS = {
   domainEvent: "orchestration.domainEvent",
 } as const;
 
-export const ProviderKind = Schema.Literal("codex");
+export const ProviderKind = Schema.Literals(["codex", "claudeCode"]);
 export type ProviderKind = typeof ProviderKind.Type;
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
@@ -47,12 +47,19 @@ const CodexProviderStartOptions = Schema.Struct({
   binaryPath: Schema.optional(TrimmedNonEmptyString),
   homePath: Schema.optional(TrimmedNonEmptyString),
 });
+export const ClaudeCodeSettingSource = Schema.Literals(["user", "project", "local"]);
+export type ClaudeCodeSettingSource = typeof ClaudeCodeSettingSource.Type;
+const ClaudeCodeProviderStartOptions = Schema.Struct({
+  binaryPath: Schema.optional(TrimmedNonEmptyString),
+  settingSources: Schema.optional(Schema.Array(ClaudeCodeSettingSource)),
+});
 const ProviderStartOptions = Schema.Struct({
   codex: Schema.optional(CodexProviderStartOptions),
+  claudeCode: Schema.optional(ClaudeCodeProviderStartOptions),
 });
 export const RuntimeMode = Schema.Literals(["approval-required", "full-access"]);
 export type RuntimeMode = typeof RuntimeMode.Type;
-export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
+export const DEFAULT_RUNTIME_MODE: RuntimeMode = "approval-required";
 export const ProviderInteractionMode = Schema.Literals(["default", "plan"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";

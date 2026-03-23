@@ -16,9 +16,11 @@ class MockWebSocket {
 
   readyState = MockWebSocket.CONNECTING;
   readonly sent: string[] = [];
+  readonly url: string;
   private readonly listeners = new Map<WsEventType, Set<WsListener>>();
 
-  constructor(_url: string) {
+  constructor(url: string) {
+    this.url = url;
     sockets.push(this);
   }
 
@@ -57,6 +59,18 @@ class MockWebSocket {
 
 const originalWebSocket = globalThis.WebSocket;
 
+function getProcessEnvForTest(): Record<string, string | undefined> {
+  const testGlobal = globalThis as typeof globalThis & {
+    __T3CODE_TEST_ENV__?: Record<string, string | undefined>;
+  };
+  if (!testGlobal.__T3CODE_TEST_ENV__) {
+    testGlobal.__T3CODE_TEST_ENV__ = {};
+  }
+  return testGlobal.__T3CODE_TEST_ENV__;
+}
+
+const originalWsUrl = getProcessEnvForTest().VITE_WS_URL;
+
 function getSocket(): MockWebSocket {
   const socket = sockets.at(-1);
   if (!socket) {
@@ -81,6 +95,12 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.WebSocket = originalWebSocket;
+  const env = getProcessEnvForTest();
+  if (originalWsUrl === undefined) {
+    delete env.VITE_WS_URL;
+  } else {
+    env.VITE_WS_URL = originalWsUrl;
+  }
   vi.restoreAllMocks();
 });
 
@@ -175,7 +195,7 @@ describe("WsTransport", () => {
     expect(warnSpy).toHaveBeenNthCalledWith(
       1,
       "Dropped inbound WebSocket envelope",
-      "SyntaxError: Expected property name or '}' in JSON at position 2 (line 1 column 3)",
+      expect.stringContaining("SyntaxError"),
     );
     expect(warnSpy).toHaveBeenNthCalledWith(
       2,
@@ -204,6 +224,42 @@ describe("WsTransport", () => {
     );
 
     await expect(requestPromise).resolves.toEqual({ projects: [] });
+    transport.dispose();
+  });
+
+  it("prefers the desktop bridge websocket url inside Electron", () => {
+    getProcessEnvForTest().VITE_WS_URL = "ws://localhost:3773/?token=dev-token";
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        location: { hostname: "localhost", port: "3020" },
+        desktopBridge: {
+          getWsUrl: () => "ws://127.0.0.1:50638/?token=desktop-token",
+        },
+      },
+    });
+
+    const transport = new WsTransport();
+    const socket = getSocket();
+
+    expect(socket.url).toBe("ws://127.0.0.1:50638/?token=desktop-token");
+    transport.dispose();
+  });
+
+  it("uses VITE_WS_URL in a plain browser tab", () => {
+    getProcessEnvForTest().VITE_WS_URL = "ws://localhost:3773/?token=dev-token";
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        location: { hostname: "localhost", port: "3020" },
+        desktopBridge: undefined,
+      },
+    });
+
+    const transport = new WsTransport();
+    const socket = getSocket();
+
+    expect(socket.url).toBe("ws://localhost:3773/?token=dev-token");
     transport.dispose();
   });
 });

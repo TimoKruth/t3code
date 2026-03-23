@@ -666,7 +666,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           title: "New thread",
           model: bootstrapProjectDefaultModel,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-          runtimeMode: "full-access",
+          runtimeMode: "approval-required",
           branch: null,
           worktreePath: null,
           createdAt,

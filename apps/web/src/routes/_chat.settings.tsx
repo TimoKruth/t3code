@@ -40,6 +40,24 @@ const THEME_OPTIONS = [
   },
 ] as const;
 
+const CLAUDE_CODE_SETTING_SOURCE_OPTIONS = [
+  {
+    value: "project" as const,
+    label: "Project settings",
+    description: "Load `.claude/settings.json` from the active workspace.",
+  },
+  {
+    value: "local" as const,
+    label: "Local settings",
+    description: "Load machine-local Claude settings when available.",
+  },
+  {
+    value: "user" as const,
+    label: "User settings",
+    description: "Load user-level Claude settings from your home directory.",
+  },
+] as const;
+
 const MODEL_PROVIDER_SETTINGS: Array<{
   provider: ProviderKind;
   title: string;
@@ -53,6 +71,13 @@ const MODEL_PROVIDER_SETTINGS: Array<{
     description: "Save additional Codex model slugs for the picker and `/model` command.",
     placeholder: "your-codex-model-slug",
     example: "gpt-6.7-codex-ultra-preview",
+  },
+  {
+    provider: "claudeCode",
+    title: "Claude Code",
+    description: "Save additional Claude model slugs for the picker and `/model` command.",
+    placeholder: "your-claude-model-slug",
+    example: "claude-sonnet-4-5",
   },
 ] as const;
 
@@ -68,8 +93,9 @@ function getCustomModelsForProvider(
 ) {
   switch (provider) {
     case "codex":
-    default:
       return settings.customCodexModels;
+    case "claudeCode":
+      return settings.customClaudeCodeModels;
   }
 }
 
@@ -79,16 +105,18 @@ function getDefaultCustomModelsForProvider(
 ) {
   switch (provider) {
     case "codex":
-    default:
       return defaults.customCodexModels;
+    case "claudeCode":
+      return defaults.customClaudeCodeModels;
   }
 }
 
 function patchCustomModels(provider: ProviderKind, models: string[]) {
   switch (provider) {
     case "codex":
-    default:
       return { customCodexModels: models };
+    case "claudeCode":
+      return { customClaudeCodeModels: models };
   }
 }
 
@@ -102,6 +130,7 @@ function SettingsRouteView() {
     Record<ProviderKind, string>
   >({
     codex: "",
+    claudeCode: "",
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<ProviderKind, string | null>>
@@ -109,6 +138,8 @@ function SettingsRouteView() {
 
   const codexBinaryPath = settings.codexBinaryPath;
   const codexHomePath = settings.codexHomePath;
+  const claudeCodeBinaryPath = settings.claudeCodeBinaryPath;
+  const claudeCodeSettingSources = settings.claudeCodeSettingSources;
   const keybindingsConfigPath = serverConfigQuery.data?.keybindingsConfigPath ?? null;
   const availableEditors = serverConfigQuery.data?.availableEditors;
 
@@ -375,6 +406,106 @@ function SettingsRouteView() {
                     }
                   >
                     Reset codex overrides
+                  </Button>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">Claude Code</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  These overrides apply to new Claude sessions and let you point the app at a
+                  specific Claude Code install and settings scope.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <label htmlFor="claude-code-binary-path" className="block space-y-1">
+                  <span className="text-xs font-medium text-foreground">
+                    Claude Code binary path
+                  </span>
+                  <Input
+                    id="claude-code-binary-path"
+                    value={claudeCodeBinaryPath}
+                    onChange={(event) =>
+                      updateSettings({ claudeCodeBinaryPath: event.target.value })
+                    }
+                    placeholder="claude"
+                    spellCheck={false}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    Leave blank to use <code>claude</code> from your PATH.
+                  </span>
+                </label>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-foreground">Claude settings sources</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Choose which Claude settings files are loaded for new sessions. All sources
+                      are enabled by default to match standard Claude Code behavior.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {CLAUDE_CODE_SETTING_SOURCE_OPTIONS.map((option) => {
+                      const checked = claudeCodeSettingSources.includes(option.value);
+                      return (
+                        <div
+                          key={option.value}
+                          className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2"
+                        >
+                          <div className="pr-3">
+                            <p className="text-sm font-medium text-foreground">{option.label}</p>
+                            <p className="text-xs text-muted-foreground">{option.description}</p>
+                          </div>
+                          <Switch
+                            checked={checked}
+                            onCheckedChange={(nextChecked) => {
+                              const nextSources = nextChecked
+                                ? [...claudeCodeSettingSources, option.value]
+                                : claudeCodeSettingSources.filter(
+                                    (value) => value !== option.value,
+                                  );
+                              updateSettings({
+                                claudeCodeSettingSources:
+                                  nextSources.length > 0
+                                    ? nextSources
+                                    : defaults.claudeCodeSettingSources,
+                              });
+                            }}
+                            aria-label={`Enable ${option.label}`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p>Binary source</p>
+                    <p className="mt-1 break-all font-mono text-[11px] text-foreground">
+                      {claudeCodeBinaryPath || "PATH"}
+                    </p>
+                    <p className="mt-3">Loaded settings</p>
+                    <p className="mt-1 break-all font-mono text-[11px] text-foreground">
+                      {claudeCodeSettingSources.join(", ")}
+                    </p>
+                  </div>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    className="self-start"
+                    onClick={() =>
+                      updateSettings({
+                        claudeCodeBinaryPath: defaults.claudeCodeBinaryPath,
+                        claudeCodeSettingSources: defaults.claudeCodeSettingSources,
+                      })
+                    }
+                  >
+                    Reset Claude overrides
                   </Button>
                 </div>
               </div>

@@ -16,14 +16,18 @@ export const ProviderHealthBanner = memo(function ProviderHealthBanner({
     status.status === "error"
       ? `${status.provider} provider is unavailable.`
       : `${status.provider} provider has limited availability.`;
+  const title =
+    status.provider === "codex"
+      ? "Codex provider status"
+      : status.provider === "claudeCode"
+        ? "Claude Code provider status"
+        : `${status.provider} status`;
 
   return (
     <div className="pt-3 mx-auto max-w-3xl">
       <Alert variant={status.status === "error" ? "error" : "warning"}>
         <CircleAlertIcon />
-        <AlertTitle>
-          {status.provider === "codex" ? "Codex provider status" : `${status.provider} status`}
-        </AlertTitle>
+        <AlertTitle>{title}</AlertTitle>
         <AlertDescription className="line-clamp-3" title={status.message ?? defaultMessage}>
           {status.message ?? defaultMessage}
         </AlertDescription>

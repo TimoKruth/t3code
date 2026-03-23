@@ -37,6 +37,7 @@ import {
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useAppSettings } from "../appSettings";
+import { resolveHttpOriginFromWebSocketUrl } from "../backendUrl";
 import { isElectron } from "../env";
 import { APP_STAGE_LABEL, APP_VERSION } from "../branding";
 import { isMacPlatform, newCommandId, newProjectId } from "../lib/utils";
@@ -183,21 +184,7 @@ function T3Wordmark() {
  * sources WsTransport uses, converting ws(s) to http(s).
  */
 function getServerHttpOrigin(): string {
-  const bridgeUrl = window.desktopBridge?.getWsUrl();
-  const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
-  const wsUrl =
-    bridgeUrl && bridgeUrl.length > 0
-      ? bridgeUrl
-      : envUrl && envUrl.length > 0
-        ? envUrl
-        : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:${window.location.port}`;
-  // Parse to extract just the origin, dropping path/query (e.g. ?token=…)
-  const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
-  try {
-    return new URL(httpUrl).origin;
-  } catch {
-    return httpUrl;
-  }
+  return resolveHttpOriginFromWebSocketUrl();
 }
 
 const serverHttpOrigin = getServerHttpOrigin();

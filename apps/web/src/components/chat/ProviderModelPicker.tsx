@@ -25,7 +25,7 @@ function isAvailableProviderOption(option: (typeof PROVIDER_OPTIONS)[number]): o
   label: string;
   available: true;
 } {
-  return option.available && option.value !== "claudeCode";
+  return option.available && (option.value === "codex" || option.value === "claudeCode");
 }
 
 function resolveModelForProviderPicker(

@@ -1,9 +1,10 @@
 import {
+  type ClaudeCodeEffort,
+  type CodexReasoningEffort,
   type ApprovalRequestId,
   DEFAULT_MODEL_BY_PROVIDER,
   type EditorId,
   type KeybindingCommand,
-  type CodexReasoningEffort,
   type MessageId,
   type ProjectId,
   type ProjectEntry,
@@ -15,6 +16,7 @@ import {
   type ProviderApprovalDecision,
   type ServerProviderStatus,
   type ProviderKind,
+  type ProviderReasoningEffort,
   type ThreadId,
   type TurnId,
   OrchestrationThreadActivity,
@@ -161,6 +163,7 @@ import {
   collectUserMessageBlobPreviewUrls,
   deriveComposerSendState,
   getCustomModelOptionsByProvider,
+  isProviderSelectionLocked,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   PullRequestDialogState,
@@ -565,13 +568,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
   const sessionProvider = activeThread?.session?.provider ?? null;
   const selectedProviderByThreadId = composerDraft.provider;
-  const hasThreadStarted = Boolean(
-    activeThread &&
-    (activeThread.latestTurn !== null ||
-      activeThread.messages.length > 0 ||
-      activeThread.session !== null),
-  );
-  const lockedProvider: ProviderKind | null = hasThreadStarted
+  const lockedProvider: ProviderKind | null = isProviderSelectionLocked(activeThread)
     ? (sessionProvider ?? selectedProviderByThreadId ?? null)
     : null;
   const selectedProvider: ProviderKind = lockedProvider ?? selectedProviderByThreadId ?? "codex";
@@ -579,7 +576,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
     selectedProvider,
     activeThread?.model ?? activeProject?.model ?? getDefaultModel(selectedProvider),
   );
-  const customModelsForSelectedProvider = settings.customCodexModels;
+  const customModelsForSelectedProvider =
+    selectedProvider === "claudeCode"
+      ? settings.customClaudeCodeModels
+      : settings.customCodexModels;
   const selectedModel = useMemo(() => {
     const draftModel = composerDraft.model;
     if (!draftModel) {
@@ -593,30 +593,64 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [baseThreadModel, composerDraft.model, customModelsForSelectedProvider, selectedProvider]);
   const reasoningOptions = getReasoningEffortOptions(selectedProvider);
   const supportsReasoningEffort = reasoningOptions.length > 0;
-  const selectedEffort = composerDraft.effort ?? getDefaultReasoningEffort(selectedProvider);
+  const defaultEffort = getDefaultReasoningEffort(selectedProvider);
+  const selectedEffort =
+    composerDraft.effort && reasoningOptions.includes(composerDraft.effort)
+      ? composerDraft.effort
+      : defaultEffort;
   const selectedCodexFastModeEnabled =
     selectedProvider === "codex" ? composerDraft.codexFastMode : false;
   const selectedModelOptionsForDispatch = useMemo(() => {
-    if (selectedProvider !== "codex") {
+    if (!supportsReasoningEffort && !selectedCodexFastModeEnabled) {
       return undefined;
     }
+    if (selectedProvider === "claudeCode") {
+      const effort = selectedEffort as ClaudeCodeEffort | null;
+      return effort ? { claudeCode: { effort } } : undefined;
+    }
+    const effort = selectedEffort as CodexReasoningEffort | null;
     const codexOptions = {
-      ...(supportsReasoningEffort && selectedEffort ? { reasoningEffort: selectedEffort } : {}),
+      ...(effort ? { reasoningEffort: effort } : {}),
       ...(selectedCodexFastModeEnabled ? { fastMode: true } : {}),
     };
     return Object.keys(codexOptions).length > 0 ? { codex: codexOptions } : undefined;
   }, [selectedCodexFastModeEnabled, selectedEffort, selectedProvider, supportsReasoningEffort]);
   const providerOptionsForDispatch = useMemo(() => {
-    if (!settings.codexBinaryPath && !settings.codexHomePath) {
+    const hasCodexOptions = Boolean(settings.codexBinaryPath || settings.codexHomePath);
+    const hasClaudeCodeOptions = Boolean(
+      settings.claudeCodeBinaryPath ||
+      settings.claudeCodeSettingSources.length !== 3 ||
+      !["user", "project", "local"].every((s) => settings.claudeCodeSettingSources.includes(s)),
+    );
+    if (!hasCodexOptions && !hasClaudeCodeOptions) {
       return undefined;
     }
     return {
-      codex: {
-        ...(settings.codexBinaryPath ? { binaryPath: settings.codexBinaryPath } : {}),
-        ...(settings.codexHomePath ? { homePath: settings.codexHomePath } : {}),
-      },
+      ...(hasCodexOptions
+        ? {
+            codex: {
+              ...(settings.codexBinaryPath ? { binaryPath: settings.codexBinaryPath } : {}),
+              ...(settings.codexHomePath ? { homePath: settings.codexHomePath } : {}),
+            },
+          }
+        : {}),
+      ...(hasClaudeCodeOptions
+        ? {
+            claudeCode: {
+              ...(settings.claudeCodeBinaryPath
+                ? { binaryPath: settings.claudeCodeBinaryPath }
+                : {}),
+              settingSources: settings.claudeCodeSettingSources,
+            },
+          }
+        : {}),
     };
-  }, [settings.codexBinaryPath, settings.codexHomePath]);
+  }, [
+    settings.claudeCodeBinaryPath,
+    settings.claudeCodeSettingSources,
+    settings.codexBinaryPath,
+    settings.codexHomePath,
+  ]);
   const selectedModelForPicker = selectedModel;
   const modelOptionsByProvider = useMemo(
     () => getCustomModelOptionsByProvider(settings),
@@ -1083,7 +1117,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const keybindings = serverConfigQuery.data?.keybindings ?? EMPTY_KEYBINDINGS;
   const availableEditors = serverConfigQuery.data?.availableEditors ?? EMPTY_AVAILABLE_EDITORS;
   const providerStatuses = serverConfigQuery.data?.providers ?? EMPTY_PROVIDER_STATUSES;
-  const activeProvider = activeThread?.session?.provider ?? "codex";
+  const activeProvider = activeThread?.session?.provider ?? selectedProvider;
   const activeProviderStatus = useMemo(
     () => providerStatuses.find((status) => status.provider === activeProvider) ?? null,
     [activeProvider, providerStatuses],
@@ -2513,7 +2547,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
       const title = truncateTitle(titleSeed);
       let threadCreateModel: ModelSlug =
-        selectedModel || (activeProject.model as ModelSlug) || DEFAULT_MODEL_BY_PROVIDER.codex;
+        selectedModel ||
+        (activeProject.model as ModelSlug) ||
+        DEFAULT_MODEL_BY_PROVIDER[selectedProvider];
 
       if (isLocalDraftThread) {
         await api.orchestration.dispatchCommand({
@@ -2954,7 +2990,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedModel ||
       (activeThread.model as ModelSlug) ||
       (activeProject.model as ModelSlug) ||
-      DEFAULT_MODEL_BY_PROVIDER.codex;
+      DEFAULT_MODEL_BY_PROVIDER[selectedProvider];
 
     sendInFlightRef.current = true;
     beginSendPhase("sending-turn");
@@ -3058,10 +3094,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
         scheduleComposerFocus();
         return;
       }
+      const customModels =
+        provider === "claudeCode" ? settings.customClaudeCodeModels : settings.customCodexModels;
       setComposerDraftProvider(activeThread.id, provider);
       setComposerDraftModel(
         activeThread.id,
-        resolveAppModelSelection(provider, settings.customCodexModels, model),
+        resolveAppModelSelection(provider, customModels, model),
       );
       scheduleComposerFocus();
     },
@@ -3071,11 +3109,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
       scheduleComposerFocus,
       setComposerDraftModel,
       setComposerDraftProvider,
+      settings.customClaudeCodeModels,
       settings.customCodexModels,
     ],
   );
   const onEffortSelect = useCallback(
-    (effort: CodexReasoningEffort) => {
+    (effort: ProviderReasoningEffort) => {
       setComposerDraftEffort(threadId, effort);
       scheduleComposerFocus();
     },
@@ -3743,6 +3782,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                 className="mx-0.5 hidden h-4 sm:block"
                               />
                               <CodexTraitsPicker
+                                provider={selectedProvider}
                                 effort={selectedEffort}
                                 fastModeEnabled={selectedCodexFastModeEnabled}
                                 options={reasoningOptions}

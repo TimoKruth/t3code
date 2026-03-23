@@ -15,6 +15,7 @@ import {
 import { create } from "zustand";
 import { type ChatMessage, type Project, type Thread } from "./types";
 import { Debouncer } from "@tanstack/react-pacer";
+import { resolveHttpOriginFromWebSocketUrl } from "./backendUrl";
 
 // ── State ────────────────────────────────────────────────────────────
 
@@ -189,47 +190,38 @@ function toLegacySessionStatus(
 }
 
 function toLegacyProvider(providerName: string | null): ProviderKind {
-  if (providerName === "codex") {
+  if (providerName === "codex" || providerName === "claudeCode") {
     return providerName;
   }
   return "codex";
 }
 
 const CODEX_MODEL_SLUGS = new Set<string>(getModelOptions("codex").map((option) => option.slug));
+const CLAUDE_CODE_MODEL_SLUGS = new Set<string>(
+  getModelOptions("claudeCode").map((option) => option.slug),
+);
 
 function inferProviderForThreadModel(input: {
   readonly model: string;
   readonly sessionProviderName: string | null;
 }): ProviderKind {
-  if (input.sessionProviderName === "codex") {
+  if (input.sessionProviderName === "codex" || input.sessionProviderName === "claudeCode") {
     return input.sessionProviderName;
   }
   const normalizedCodex = normalizeModelSlug(input.model, "codex");
   if (normalizedCodex && CODEX_MODEL_SLUGS.has(normalizedCodex)) {
     return "codex";
   }
+  const normalizedClaudeCode = normalizeModelSlug(input.model, "claudeCode");
+  if (normalizedClaudeCode && CLAUDE_CODE_MODEL_SLUGS.has(normalizedClaudeCode)) {
+    return "claudeCode";
+  }
   return "codex";
 }
 
 function resolveWsHttpOrigin(): string {
   if (typeof window === "undefined") return "";
-  const bridgeWsUrl = window.desktopBridge?.getWsUrl?.();
-  const envWsUrl = import.meta.env.VITE_WS_URL as string | undefined;
-  const wsCandidate =
-    typeof bridgeWsUrl === "string" && bridgeWsUrl.length > 0
-      ? bridgeWsUrl
-      : typeof envWsUrl === "string" && envWsUrl.length > 0
-        ? envWsUrl
-        : null;
-  if (!wsCandidate) return window.location.origin;
-  try {
-    const wsUrl = new URL(wsCandidate);
-    const protocol =
-      wsUrl.protocol === "wss:" ? "https:" : wsUrl.protocol === "ws:" ? "http:" : wsUrl.protocol;
-    return `${protocol}//${wsUrl.host}`;
-  } catch {
-    return window.location.origin;
-  }
+  return resolveHttpOriginFromWebSocketUrl();
 }
 
 function toAttachmentPreviewUrl(rawUrl: string): string {

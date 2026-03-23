@@ -1,7 +1,7 @@
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as Effect from "effect/Effect";
 
-const DEFAULT_RUNTIME_MODE = "full-access";
+const DEFAULT_RUNTIME_MODE = "approval-required";
 
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

@@ -11,6 +11,7 @@ import {
 } from "./baseSchemas";
 import {
   ChatAttachment,
+  ClaudeCodeSettingSource,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderApprovalDecision,
@@ -51,9 +52,14 @@ const CodexProviderStartOptions = Schema.Struct({
   binaryPath: Schema.optional(TrimmedNonEmptyStringSchema),
   homePath: Schema.optional(TrimmedNonEmptyStringSchema),
 });
+const ClaudeCodeProviderStartOptions = Schema.Struct({
+  binaryPath: Schema.optional(TrimmedNonEmptyStringSchema),
+  settingSources: Schema.optional(Schema.Array(ClaudeCodeSettingSource)),
+});
 
 export const ProviderStartOptions = Schema.Struct({
   codex: Schema.optional(CodexProviderStartOptions),
+  claudeCode: Schema.optional(ClaudeCodeProviderStartOptions),
 });
 export type ProviderStartOptions = typeof ProviderStartOptions.Type;
 

@@ -148,13 +148,17 @@ export function createDevRunnerEnv({
     const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
     const webPort = BASE_WEB_PORT + webOffset;
     const resolvedStateDir = yield* resolveStateDir(stateDir);
+    const wsUrl = new URL(`ws://localhost:${serverPort}`);
+    if (authToken !== undefined) {
+      wsUrl.searchParams.set("token", authToken);
+    }
 
     const output: NodeJS.ProcessEnv = {
       ...baseEnv,
       T3CODE_PORT: String(serverPort),
       PORT: String(webPort),
       ELECTRON_RENDERER_PORT: String(webPort),
-      VITE_WS_URL: `ws://localhost:${serverPort}`,
+      VITE_WS_URL: wsUrl.toString(),
       VITE_DEV_SERVER_URL: devUrl?.toString() ?? `http://localhost:${webPort}`,
       T3CODE_STATE_DIR: resolvedStateDir,
     };

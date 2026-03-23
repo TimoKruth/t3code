@@ -123,10 +123,25 @@ export function cloneComposerImageForRetry(
 
 export function getCustomModelOptionsByProvider(settings: {
   customCodexModels: readonly string[];
+  customClaudeCodeModels: readonly string[];
 }): Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>> {
   return {
     codex: getAppModelOptions("codex", settings.customCodexModels),
+    claudeCode: getAppModelOptions("claudeCode", settings.customClaudeCodeModels),
   };
+}
+
+export function isProviderSelectionLocked(thread: Thread | null | undefined): boolean {
+  if (!thread) {
+    return false;
+  }
+
+  return (
+    thread.latestTurn !== null ||
+    thread.messages.length > 0 ||
+    (thread.session !== null &&
+      (thread.session.activeTurnId !== undefined || thread.session.status === "running"))
+  );
 }
 
 export function deriveComposerSendState(options: {
