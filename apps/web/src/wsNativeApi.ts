@@ -19,6 +19,15 @@ const serverConfigUpdatedListeners = new Set<(payload: ServerConfigUpdatedPayloa
 const gitActionProgressListeners = new Set<(payload: GitActionProgressEvent) => void>();
 
 /**
+ * Return the most recently received server welcome payload, or null if
+ * the welcome message has not arrived yet.  This is a synchronous read
+ * of the transport's cache — no subscription required.
+ */
+export function getLatestWelcome(): WsWelcomePayload | null {
+  return instance?.transport.getLatestPush(WS_CHANNELS.serverWelcome)?.data ?? null;
+}
+
+/**
  * Subscribe to the server welcome message. If a welcome was already received
  * before this call, the listener fires synchronously with the cached payload.
  * This avoids the race between WebSocket connect and React effect registration.

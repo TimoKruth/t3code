@@ -93,8 +93,27 @@ function ChatRouteGlobalShortcuts() {
   return null;
 }
 
+/**
+ * Detect embedded mode from the original URL.
+ * When cmux loads t3code in a WebView, it adds ?embedded=1 to the URL.
+ * We capture this once at module load time since router redirects may strip it.
+ */
+const EMBEDDED_MODE = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("embedded") === "1") return true;
+    // Also check hash-based search params (e.g., /#/?embedded=1)
+    const hash = window.location.hash;
+    if (hash.includes("embedded=1")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+})();
+
 function ChatRouteLayout() {
   const navigate = useNavigate();
+  const isEmbedded = EMBEDDED_MODE;
 
   useEffect(() => {
     const onMenuAction = window.desktopBridge?.onMenuAction;
@@ -113,22 +132,24 @@ function ChatRouteLayout() {
   }, [navigate]);
 
   return (
-    <SidebarProvider defaultOpen>
+    <SidebarProvider defaultOpen={!isEmbedded}>
       <ChatRouteGlobalShortcuts />
-      <Sidebar
-        side="left"
-        collapsible="offcanvas"
-        className="border-r border-border bg-card text-foreground"
-        resizable={{
-          minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: ({ nextWidth, wrapper }) =>
-            wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-          storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-        }}
-      >
-        <ThreadSidebar />
-        <SidebarRail />
-      </Sidebar>
+      {!isEmbedded && (
+        <Sidebar
+          side="left"
+          collapsible="offcanvas"
+          className="border-r border-border bg-card text-foreground"
+          resizable={{
+            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+            shouldAcceptWidth: ({ nextWidth, wrapper }) =>
+              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+          }}
+        >
+          <ThreadSidebar />
+          <SidebarRail />
+        </Sidebar>
+      )}
       <Outlet />
     </SidebarProvider>
   );
