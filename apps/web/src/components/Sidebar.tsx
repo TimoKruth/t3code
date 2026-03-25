@@ -406,6 +406,15 @@ export default function Sidebar() {
   >(() => new Set());
   const renamingCommittedRef = useRef(false);
   const renamingInputRef = useRef<HTMLInputElement | null>(null);
+  const [renamingProjectId, setRenamingProjectId] = useState<ProjectId | null>(null);
+  const [renamingProjectName, setRenamingProjectName] = useState("");
+  const renamingProjectCommittedRef = useRef(false);
+  const renamingProjectInputRef = useRef<HTMLInputElement | null>(null);
+  const [changingDirProjectId, setChangingDirProjectId] = useState<ProjectId | null>(null);
+  const [changingDirPath, setChangingDirPath] = useState("");
+  const [changingDirError, setChangingDirError] = useState<string | null>(null);
+  const [isChangingDir, setIsChangingDir] = useState(false);
+  const changingDirInputRef = useRef<HTMLInputElement | null>(null);
   const dragInProgressRef = useRef(false);
   const suppressProjectClickAfterDragRef = useRef(false);
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
@@ -613,6 +622,55 @@ export default function Sidebar() {
     setRenamingThreadId(null);
     renamingInputRef.current = null;
   }, []);
+
+  const cancelProjectRename = useCallback(() => {
+    setRenamingProjectId(null);
+    renamingProjectInputRef.current = null;
+  }, []);
+
+  const commitProjectRename = useCallback(
+    async (projectId: ProjectId, newName: string, originalName: string) => {
+      const finishRename = () => {
+        setRenamingProjectId((current) => {
+          if (current !== projectId) return current;
+          renamingProjectInputRef.current = null;
+          return null;
+        });
+      };
+
+      const trimmed = newName.trim();
+      if (trimmed.length === 0) {
+        toastManager.add({ type: "warning", title: "Project name cannot be empty" });
+        finishRename();
+        return;
+      }
+      if (trimmed === originalName) {
+        finishRename();
+        return;
+      }
+      const api = readNativeApi();
+      if (!api) {
+        finishRename();
+        return;
+      }
+      try {
+        await api.orchestration.dispatchCommand({
+          type: "project.meta.update",
+          commandId: newCommandId(),
+          projectId,
+          title: trimmed,
+        });
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Failed to rename project",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        });
+      }
+      finishRename();
+    },
+    [],
+  );
 
   const commitRename = useCallback(
     async (threadId: ThreadId, newTitle: string, originalTitle: string) => {
@@ -973,18 +1031,92 @@ export default function Sidebar() {
     ],
   );
 
+  const applyChangeDir = useCallback(
+    async (projectId: ProjectId, rawPath: string) => {
+      const path = rawPath.trim();
+      if (!path) return;
+      const api = readNativeApi();
+      if (!api) return;
+      const duplicate = projects.find((p) => p.cwd === path && p.id !== projectId);
+      if (duplicate) {
+        setChangingDirError(`"${duplicate.name}" already points to this directory.`);
+        return;
+      }
+      setIsChangingDir(true);
+      try {
+        await api.orchestration.dispatchCommand({
+          type: "project.meta.update",
+          commandId: newCommandId(),
+          projectId,
+          workspaceRoot: path,
+        });
+        setChangingDirProjectId(null);
+        setChangingDirPath("");
+        setChangingDirError(null);
+      } catch (error) {
+        setChangingDirError(error instanceof Error ? error.message : "An error occurred.");
+      }
+      setIsChangingDir(false);
+    },
+    [projects],
+  );
+
+  const handleChangeProjectDir = useCallback(
+    async (projectId: ProjectId) => {
+      if (isElectron) {
+        const api = readNativeApi();
+        if (!api) return;
+        try {
+          const pickedPath = await api.dialogs.pickFolder();
+          if (!pickedPath) return;
+          await applyChangeDir(projectId, pickedPath);
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to change directory",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+        }
+      } else {
+        // Browser: show inline path input bar
+        const project = projects.find((p) => p.id === projectId);
+        setChangingDirProjectId(projectId);
+        setChangingDirPath(project?.cwd ?? "");
+        setChangingDirError(null);
+      }
+    },
+    [applyChangeDir, isElectron, projects],
+  );
+
   const handleProjectContextMenu = useCallback(
     async (projectId: ProjectId, position: { x: number; y: number }) => {
       const api = readNativeApi();
       if (!api) return;
       const clicked = await api.contextMenu.show(
-        [{ id: "delete", label: "Remove project", destructive: true }],
+        [
+          { id: "rename", label: "Rename project" },
+          { id: "change-dir", label: "Change project directory\u2026" },
+          { id: "delete", label: "Remove project", destructive: true },
+        ],
         position,
       );
-      if (clicked !== "delete") return;
 
       const project = projects.find((entry) => entry.id === projectId);
       if (!project) return;
+
+      if (clicked === "rename") {
+        setRenamingProjectId(projectId);
+        setRenamingProjectName(project.name);
+        renamingProjectCommittedRef.current = false;
+        return;
+      }
+
+      if (clicked === "change-dir") {
+        void handleChangeProjectDir(projectId);
+        return;
+      }
+
+      if (clicked !== "delete") return;
 
       const projectThreads = threads.filter((thread) => thread.projectId === projectId);
       if (projectThreads.length > 0) {
@@ -1024,6 +1156,7 @@ export default function Sidebar() {
       clearComposerDraftForThread,
       clearProjectDraftThreadId,
       getDraftThreadByProjectId,
+      handleChangeProjectDir,
       projects,
       threads,
     ],
@@ -1331,10 +1464,63 @@ export default function Sidebar() {
                 }`}
               />
             )}
-            <ProjectFavicon cwd={project.cwd} />
-            <span className="flex-1 truncate text-xs font-medium text-foreground/90">
-              {project.name}
+            <span
+              role="button"
+              tabIndex={-1}
+              title="Change project directory"
+              className="shrink-0 cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleChangeProjectDir(project.id);
+              }}
+            >
+              <ProjectFavicon cwd={project.cwd} />
             </span>
+            {renamingProjectId === project.id ? (
+              <input
+                ref={(el) => {
+                  if (el && renamingProjectInputRef.current !== el) {
+                    renamingProjectInputRef.current = el;
+                    el.focus();
+                    el.select();
+                  }
+                }}
+                className="min-w-0 flex-1 truncate text-xs font-medium bg-transparent outline-none border border-ring rounded px-0.5"
+                value={renamingProjectName}
+                onChange={(e) => setRenamingProjectName(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    renamingProjectCommittedRef.current = true;
+                    void commitProjectRename(project.id, renamingProjectName, project.name);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    renamingProjectCommittedRef.current = true;
+                    cancelProjectRename();
+                  }
+                }}
+                onBlur={() => {
+                  if (!renamingProjectCommittedRef.current) {
+                    void commitProjectRename(project.id, renamingProjectName, project.name);
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span
+                className="flex-1 truncate text-xs font-medium text-foreground/90 cursor-text"
+                onDoubleClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setRenamingProjectId(project.id);
+                  setRenamingProjectName(project.name);
+                  renamingProjectCommittedRef.current = false;
+                }}
+              >
+                {project.name}
+              </span>
+            )}
           </SidebarMenuButton>
           <Tooltip>
             <TooltipTrigger
@@ -1368,6 +1554,76 @@ export default function Sidebar() {
             </TooltipPopup>
           </Tooltip>
         </div>
+
+        {changingDirProjectId === project.id && (
+          <div className="mx-2 mb-1 mt-0.5">
+            {isElectron && (
+              <button
+                type="button"
+                className="mb-1 flex w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary py-1 text-xs text-foreground/80 transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => {
+                  const api = readNativeApi();
+                  if (!api) return;
+                  void api.dialogs.pickFolder().then((picked) => {
+                    if (picked) {
+                      setChangingDirPath(picked);
+                    }
+                  });
+                }}
+                disabled={isChangingDir}
+              >
+                <FolderIcon className="size-3.5" />
+                Browse for folder
+              </button>
+            )}
+            <div className="flex gap-1">
+              <input
+                ref={(el) => {
+                  if (el && changingDirInputRef.current !== el) {
+                    changingDirInputRef.current = el;
+                    el.focus();
+                    el.select();
+                  }
+                }}
+                className={`min-w-0 flex-1 rounded-md border bg-secondary px-2 py-1 font-mono text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none ${
+                  changingDirError
+                    ? "border-red-500/70 focus:border-red-500"
+                    : "border-border focus:border-ring"
+                }`}
+                placeholder="/path/to/project"
+                value={changingDirPath}
+                onChange={(e) => {
+                  setChangingDirPath(e.target.value);
+                  setChangingDirError(null);
+                }}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") {
+                    void applyChangeDir(project.id, changingDirPath);
+                  }
+                  if (e.key === "Escape") {
+                    setChangingDirProjectId(null);
+                    setChangingDirError(null);
+                  }
+                }}
+                disabled={isChangingDir}
+              />
+              <button
+                type="button"
+                className="shrink-0 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 disabled:opacity-60"
+                onClick={() => void applyChangeDir(project.id, changingDirPath)}
+                disabled={!changingDirPath.trim() || isChangingDir}
+              >
+                {isChangingDir ? "..." : "Set"}
+              </button>
+            </div>
+            {changingDirError && (
+              <p className="mt-0.5 px-0.5 text-[11px] leading-tight text-red-400">
+                {changingDirError}
+              </p>
+            )}
+          </div>
+        )}
 
         <CollapsibleContent>
           <SidebarMenuSub
@@ -1414,6 +1670,7 @@ export default function Sidebar() {
 
   const handleProjectTitleClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>, projectId: ProjectId) => {
+      if (renamingProjectId === projectId) return;
       if (dragInProgressRef.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -1431,7 +1688,7 @@ export default function Sidebar() {
       }
       toggleProject(projectId);
     },
-    [clearSelection, selectedThreadIds.size, toggleProject],
+    [clearSelection, renamingProjectId, selectedThreadIds.size, toggleProject],
   );
 
   const handleProjectTitleKeyDown = useCallback(

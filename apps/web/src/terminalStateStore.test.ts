@@ -1,5 +1,17 @@
 import { ThreadId } from "@t3tools/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const localStorageStore = new Map<string, string>();
+vi.stubGlobal("localStorage", {
+  getItem: (key: string) => localStorageStore.get(key) ?? null,
+  setItem: (key: string, value: string) => localStorageStore.set(key, value),
+  removeItem: (key: string) => localStorageStore.delete(key),
+  clear: () => localStorageStore.clear(),
+  get length() {
+    return localStorageStore.size;
+  },
+  key: (index: number) => [...localStorageStore.keys()][index] ?? null,
+});
 
 import { selectThreadTerminalState, useTerminalStateStore } from "./terminalStateStore";
 
