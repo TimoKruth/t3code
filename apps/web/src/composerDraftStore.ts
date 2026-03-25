@@ -190,6 +190,18 @@ interface ComposerDraftStoreState {
   stickyActiveProvider: ProviderKind | null;
   getDraftThreadByProjectId: (projectId: ProjectId) => ProjectDraftThread | null;
   getDraftThread: (threadId: ThreadId) => DraftThreadState | null;
+  ensureDraftThread: (
+    threadId: ThreadId,
+    options: {
+      projectId: ProjectId;
+      branch?: string | null;
+      worktreePath?: string | null;
+      createdAt?: string;
+      envMode?: DraftThreadEnvMode;
+      runtimeMode?: RuntimeMode;
+      interactionMode?: ProviderInteractionMode;
+    },
+  ) => void;
   setProjectDraftThreadId: (
     projectId: ProjectId,
     threadId: ThreadId,
@@ -1280,6 +1292,31 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           return null;
         }
         return get().draftThreadsByThreadId[threadId] ?? null;
+      },
+      ensureDraftThread: (threadId, options) => {
+        if (threadId.length === 0 || options.projectId.length === 0) {
+          return;
+        }
+        set((state) => {
+          if (state.draftThreadsByThreadId[threadId]) {
+            return state;
+          }
+          return {
+            ...state,
+            draftThreadsByThreadId: {
+              ...state.draftThreadsByThreadId,
+              [threadId]: {
+                projectId: options.projectId,
+                createdAt: options.createdAt ?? new Date().toISOString(),
+                runtimeMode: options.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+                interactionMode: options.interactionMode ?? DEFAULT_INTERACTION_MODE,
+                branch: options.branch ?? null,
+                worktreePath: options.worktreePath ?? null,
+                envMode: options.envMode ?? (options.worktreePath ? "worktree" : "local"),
+              },
+            },
+          };
+        });
       },
       setProjectDraftThreadId: (projectId, threadId, options) => {
         if (projectId.length === 0 || threadId.length === 0) {

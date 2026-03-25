@@ -6,6 +6,7 @@
  *
  * @module CliConfig
  */
+import { mkdirSync, writeFileSync } from "node:fs";
 import { Config, Data, Effect, FileSystem, Layer, Option, Path, Schema, ServiceMap } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { NetService } from "@t3tools/shared/Net";
@@ -184,6 +185,15 @@ const ServerConfigLive = (input: CliInput) =>
         autoBootstrapProjectFromCwd,
         logWebSocketEvents,
       } satisfies ServerConfigShape;
+
+      // Write port file early so embedded clients (cmux) can connect
+      // as soon as the config is resolved, before runtime layers load.
+      mkdirSync(config.stateDir, { recursive: true });
+      try {
+        writeFileSync(`${config.stateDir}/server.port`, String(config.port), "utf-8");
+      } catch {
+        // Non-critical
+      }
 
       return config;
     }),

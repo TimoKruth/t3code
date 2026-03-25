@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { SidebarTrigger } from "../components/ui/sidebar";
+import { EMBEDDED_MODE } from "../embedded";
 
 function ChatIndexRouteView() {
   return (
@@ -23,7 +24,11 @@ function ChatIndexRouteView() {
 
       <div className="flex flex-1 items-center justify-center">
         <div className="text-center">
-          <p className="text-sm">Select a thread or create a new one to get started.</p>
+          <p className="text-sm">
+            {EMBEDDED_MODE
+              ? "Preparing a new chat..."
+              : "Select a thread or create a new one to get started."}
+          </p>
         </div>
       </div>
     </div>

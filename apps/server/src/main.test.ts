@@ -1,4 +1,6 @@
 import * as Http from "node:http";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
 import type { OrchestrationReadModel } from "@t3tools/contracts";
@@ -20,9 +22,16 @@ import { Server, type ServerShape } from "./wsServer";
 const start = vi.fn(() => undefined);
 const stop = vi.fn(() => undefined);
 let resolvedConfig: ServerConfigShape | null = null;
+let portFileObservedAtStart = false;
+let portFileValueAtStart: string | null = null;
 const serverStart = Effect.acquireRelease(
   Effect.gen(function* () {
     resolvedConfig = yield* ServerConfig;
+    const portFilePath = join(resolvedConfig.stateDir, "server.port");
+    portFileObservedAtStart = existsSync(portFilePath);
+    portFileValueAtStart = portFileObservedAtStart
+      ? readFileSync(portFilePath, "utf8").trim()
+      : null;
     start();
     return {} as unknown as Http.Server;
   }),
@@ -76,6 +85,8 @@ const runCli = (
 beforeEach(() => {
   vi.clearAllMocks();
   resolvedConfig = null;
+  portFileObservedAtStart = false;
+  portFileValueAtStart = null;
   start.mockImplementation(() => undefined);
   stop.mockImplementation(() => undefined);
   findAvailablePort.mockImplementation((preferred: number) => Effect.succeed(preferred));
@@ -111,6 +122,8 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.authToken, "auth-secret");
       assert.equal(resolvedConfig?.autoBootstrapProjectFromCwd, false);
       assert.equal(resolvedConfig?.logWebSocketEvents, true);
+      assert.equal(portFileObservedAtStart, true);
+      assert.equal(portFileValueAtStart, "4010");
       assert.equal(stop.mock.calls.length, 1);
     }),
   );

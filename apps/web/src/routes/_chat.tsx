@@ -13,6 +13,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { resolveSidebarNewThreadEnvMode } from "~/components/Sidebar.logic";
 import { useAppSettings } from "~/appSettings";
 import { Sidebar, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { EMBEDDED_MODE } from "../embedded";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
@@ -113,22 +114,24 @@ function ChatRouteLayout() {
   }, [navigate]);
 
   return (
-    <SidebarProvider defaultOpen>
+    <SidebarProvider defaultOpen={!EMBEDDED_MODE}>
       <ChatRouteGlobalShortcuts />
-      <Sidebar
-        side="left"
-        collapsible="offcanvas"
-        className="border-r border-border bg-card text-foreground"
-        resizable={{
-          minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-          shouldAcceptWidth: ({ nextWidth, wrapper }) =>
-            wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-          storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-        }}
-      >
-        <ThreadSidebar />
-        <SidebarRail />
-      </Sidebar>
+      {!EMBEDDED_MODE && (
+        <Sidebar
+          side="left"
+          collapsible="offcanvas"
+          className="border-r border-border bg-card text-foreground"
+          resizable={{
+            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+            shouldAcceptWidth: ({ nextWidth, wrapper }) =>
+              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+          }}
+        >
+          <ThreadSidebar />
+          <SidebarRail />
+        </Sidebar>
+      )}
       <Outlet />
     </SidebarProvider>
   );
