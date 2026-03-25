@@ -1014,46 +1014,22 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           return;
         }
         set((state) => {
-          const existingThread = state.draftThreadsByThreadId[threadId];
-          const nextWorktreePath =
-            options.worktreePath === undefined
-              ? (existingThread?.worktreePath ?? null)
-              : (options.worktreePath ?? null);
-          const nextDraftThread: DraftThreadState = {
-            projectId: options.projectId,
-            createdAt: options.createdAt ?? existingThread?.createdAt ?? new Date().toISOString(),
-            runtimeMode:
-              options.runtimeMode ?? existingThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
-            interactionMode:
-              options.interactionMode ??
-              existingThread?.interactionMode ??
-              DEFAULT_INTERACTION_MODE,
-            branch:
-              options.branch === undefined
-                ? (existingThread?.branch ?? null)
-                : (options.branch ?? null),
-            worktreePath: nextWorktreePath,
-            envMode:
-              options.envMode ??
-              (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
-          };
-          const isUnchanged =
-            existingThread &&
-            existingThread.projectId === nextDraftThread.projectId &&
-            existingThread.createdAt === nextDraftThread.createdAt &&
-            existingThread.runtimeMode === nextDraftThread.runtimeMode &&
-            existingThread.interactionMode === nextDraftThread.interactionMode &&
-            existingThread.branch === nextDraftThread.branch &&
-            existingThread.worktreePath === nextDraftThread.worktreePath &&
-            existingThread.envMode === nextDraftThread.envMode;
-          if (isUnchanged) {
+          if (state.draftThreadsByThreadId[threadId]) {
             return state;
           }
           return {
             ...state,
             draftThreadsByThreadId: {
               ...state.draftThreadsByThreadId,
-              [threadId]: nextDraftThread,
+              [threadId]: {
+                projectId: options.projectId,
+                createdAt: options.createdAt ?? new Date().toISOString(),
+                runtimeMode: options.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+                interactionMode: options.interactionMode ?? DEFAULT_INTERACTION_MODE,
+                branch: options.branch ?? null,
+                worktreePath: options.worktreePath ?? null,
+                envMode: options.envMode ?? (options.worktreePath ? "worktree" : "local"),
+              },
             },
           };
         });

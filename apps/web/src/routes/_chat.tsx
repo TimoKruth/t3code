@@ -13,6 +13,7 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { resolveSidebarNewThreadEnvMode } from "~/components/Sidebar.logic";
 import { useAppSettings } from "~/appSettings";
 import { Sidebar, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { EMBEDDED_MODE } from "../embedded";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
@@ -93,27 +94,8 @@ function ChatRouteGlobalShortcuts() {
   return null;
 }
 
-/**
- * Detect embedded mode from the original URL.
- * When cmux loads t3code in a WebView, it adds ?embedded=1 to the URL.
- * We capture this once at module load time since router redirects may strip it.
- */
-const EMBEDDED_MODE = (() => {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("embedded") === "1") return true;
-    // Also check hash-based search params (e.g., /#/?embedded=1)
-    const hash = window.location.hash;
-    if (hash.includes("embedded=1")) return true;
-    return false;
-  } catch {
-    return false;
-  }
-})();
-
 function ChatRouteLayout() {
   const navigate = useNavigate();
-  const isEmbedded = EMBEDDED_MODE;
 
   useEffect(() => {
     const onMenuAction = window.desktopBridge?.onMenuAction;
@@ -132,9 +114,9 @@ function ChatRouteLayout() {
   }, [navigate]);
 
   return (
-    <SidebarProvider defaultOpen={!isEmbedded}>
+    <SidebarProvider defaultOpen={!EMBEDDED_MODE}>
       <ChatRouteGlobalShortcuts />
-      {!isEmbedded && (
+      {!EMBEDDED_MODE && (
         <Sidebar
           side="left"
           collapsible="offcanvas"

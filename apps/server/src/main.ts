@@ -124,71 +124,82 @@ const CliEnvConfig = Config.all({
 const resolveBooleanFlag = (flag: Option.Option<boolean>, envValue: boolean) =>
   Option.getOrElse(Option.filter(flag, Boolean), () => envValue);
 
-const resolveServerConfig = (input: CliInput) =>
-  Effect.gen(function* () {
-    const cliConfig = yield* CliConfig;
-    const { findAvailablePort } = yield* NetService;
-    const env = yield* CliEnvConfig.asEffect().pipe(
-      Effect.mapError(
-        (cause) =>
-          new StartupError({ message: "Failed to read environment configuration", cause }),
-      ),
-    );
-
-    const mode = Option.getOrElse(input.mode, () => env.mode);
-
-    const port = yield* Option.match(input.port, {
-      onSome: (value) => Effect.succeed(value),
-      onNone: () => {
-        if (env.port) {
-          return Effect.succeed(env.port);
-        }
-        if (mode === "desktop") {
-          return Effect.succeed(DEFAULT_PORT);
-        }
-        return findAvailablePort(DEFAULT_PORT);
-      },
-    });
-
-    const devUrl = Option.getOrElse(input.devUrl, () => env.devUrl);
-    const baseDir = yield* resolveBaseDir(Option.getOrUndefined(input.t3Home) ?? env.t3Home);
-    const derivedPaths = yield* deriveServerPaths(baseDir, devUrl);
-    const noBrowser = resolveBooleanFlag(input.noBrowser, env.noBrowser ?? mode === "desktop");
-    const authToken = Option.getOrUndefined(input.authToken) ?? env.authToken;
-    const autoBootstrapProjectFromCwd = resolveBooleanFlag(
-      input.autoBootstrapProjectFromCwd,
-      env.autoBootstrapProjectFromCwd ?? mode === "web",
-    );
-    const logWebSocketEvents = resolveBooleanFlag(
-      input.logWebSocketEvents,
-      env.logWebSocketEvents ?? Boolean(devUrl),
-    );
-    const staticDir = devUrl ? undefined : yield* cliConfig.resolveStaticDir;
-    const host =
-      Option.getOrUndefined(input.host) ??
-      env.host ??
-      (mode === "desktop" ? "127.0.0.1" : undefined);
-
-    return {
-      mode,
-      port,
-      cwd: cliConfig.cwd,
-      host,
-      baseDir,
-      ...derivedPaths,
-      staticDir,
-      devUrl,
-      noBrowser,
-      authToken,
-      autoBootstrapProjectFromCwd,
-      logWebSocketEvents,
-    } satisfies ServerConfigShape;
-  });
-
 const ServerConfigLive = (input: CliInput) =>
-  Layer.effect(ServerConfig, resolveServerConfig(input));
+  Layer.effect(
+    ServerConfig,
+    Effect.gen(function* () {
+      const cliConfig = yield* CliConfig;
+      const { findAvailablePort } = yield* NetService;
+      const env = yield* CliEnvConfig.asEffect().pipe(
+        Effect.mapError(
+          (cause) =>
+            new StartupError({ message: "Failed to read environment configuration", cause }),
+        ),
+      );
 
-const RuntimeLayerLive = (config: ServerConfigShape) =>
+      const mode = Option.getOrElse(input.mode, () => env.mode);
+
+      const port = yield* Option.match(input.port, {
+        onSome: (value) => Effect.succeed(value),
+        onNone: () => {
+          if (env.port) {
+            return Effect.succeed(env.port);
+          }
+          if (mode === "desktop") {
+            return Effect.succeed(DEFAULT_PORT);
+          }
+          return findAvailablePort(DEFAULT_PORT);
+        },
+      });
+
+      const devUrl = Option.getOrElse(input.devUrl, () => env.devUrl);
+      const baseDir = yield* resolveBaseDir(Option.getOrUndefined(input.t3Home) ?? env.t3Home);
+      const derivedPaths = yield* deriveServerPaths(baseDir, devUrl);
+      const noBrowser = resolveBooleanFlag(input.noBrowser, env.noBrowser ?? mode === "desktop");
+      const authToken = Option.getOrUndefined(input.authToken) ?? env.authToken;
+      const autoBootstrapProjectFromCwd = resolveBooleanFlag(
+        input.autoBootstrapProjectFromCwd,
+        env.autoBootstrapProjectFromCwd ?? mode === "web",
+      );
+      const logWebSocketEvents = resolveBooleanFlag(
+        input.logWebSocketEvents,
+        env.logWebSocketEvents ?? Boolean(devUrl),
+      );
+      const staticDir = devUrl ? undefined : yield* cliConfig.resolveStaticDir;
+      const host =
+        Option.getOrUndefined(input.host) ??
+        env.host ??
+        (mode === "desktop" ? "127.0.0.1" : undefined);
+
+      const config: ServerConfigShape = {
+        mode,
+        port,
+        cwd: cliConfig.cwd,
+        host,
+        baseDir,
+        ...derivedPaths,
+        staticDir,
+        devUrl,
+        noBrowser,
+        authToken,
+        autoBootstrapProjectFromCwd,
+        logWebSocketEvents,
+      } satisfies ServerConfigShape;
+
+      // Write port file early so embedded clients (cmux) can connect
+      // as soon as the config is resolved, before runtime layers load.
+      mkdirSync(config.stateDir, { recursive: true });
+      try {
+        writeFileSync(`${config.stateDir}/server.port`, String(config.port), "utf-8");
+      } catch {
+        // Non-critical
+      }
+
+      return config;
+    }),
+  );
+
+const LayerLive = (input: CliInput) =>
   Layer.empty.pipe(
     Layer.provideMerge(makeServerRuntimeServicesLayer()),
     Layer.provideMerge(makeServerProviderLayer()),
@@ -196,7 +207,7 @@ const RuntimeLayerLive = (config: ServerConfigShape) =>
     Layer.provideMerge(SqlitePersistence.layerConfig),
     Layer.provideMerge(ServerLoggerLive),
     Layer.provideMerge(AnalyticsServiceLayerLive),
-    Layer.provideMerge(Layer.succeed(ServerConfig, config)),
+    Layer.provideMerge(ServerConfigLive(input)),
   );
 
 const isWildcardHost = (host: string | undefined): boolean =>
@@ -204,25 +215,6 @@ const isWildcardHost = (host: string | undefined): boolean =>
 
 const formatHostForUrl = (host: string): string =>
   host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-
-const publishStartupSignal = (config: ServerConfigShape) =>
-  Effect.sync(() => {
-    mkdirSync(config.stateDir, { recursive: true });
-    process.stdout.write(
-      JSON.stringify({
-        type: "server-started",
-        port: config.port,
-        host: config.host ?? "127.0.0.1",
-        stateDir: config.stateDir,
-        cwd: config.cwd,
-      }) + "\n",
-    );
-    try {
-      writeFileSync(`${config.stateDir}/server.port`, String(config.port), "utf-8");
-    } catch {
-      // Non-critical
-    }
-  });
 
 export const recordStartupHeartbeat = Effect.gen(function* () {
   const analytics = yield* AnalyticsService;
@@ -252,63 +244,49 @@ export const recordStartupHeartbeat = Effect.gen(function* () {
 const makeServerProgram = (input: CliInput) =>
   Effect.gen(function* () {
     const cliConfig = yield* CliConfig;
+    const { start, stopSignal } = yield* Server;
+    const openDeps = yield* Open;
     yield* cliConfig.fixPath;
 
-    const config = yield* resolveServerConfig(input);
+    const config = yield* ServerConfig;
 
-    // Publish the chosen port before the expensive runtime layers finish
-    // acquiring so embedded clients can begin loading immediately.
-    yield* publishStartupSignal(config);
-
-    yield* Effect.gen(function* () {
-      const { start, stopSignal } = yield* Server;
-      const openDeps = yield* Open;
-
-      if (!config.devUrl && !config.staticDir) {
-        yield* Effect.logWarning(
-          "web bundle missing and no VITE_DEV_SERVER_URL; web UI unavailable",
-          {
-            hint: "Run `bun run --cwd apps/web build` or set VITE_DEV_SERVER_URL for dev mode.",
-          },
-        );
-      }
-
-      const { authToken, devUrl, ...safeConfig } = config;
-      const localUrl = `http://localhost:${config.port}`;
-      const bindUrl =
-        config.host && !isWildcardHost(config.host)
-          ? `http://${formatHostForUrl(config.host)}:${config.port}`
-          : localUrl;
-
-      // Fork the HTTP server start (it blocks until shutdown)
-      yield* Effect.forkChild(start);
-
-      // Fork post-startup tasks (logging, browser open)
-      yield* Effect.forkChild(
-        Effect.gen(function* () {
-          yield* Effect.logInfo("T3 Code running", {
-            ...safeConfig,
-            devUrl: devUrl?.toString(),
-            authEnabled: Boolean(authToken),
-          });
-
-          if (!config.noBrowser) {
-            const target = config.devUrl?.toString() ?? bindUrl;
-            yield* openDeps.openBrowser(target).pipe(
-              Effect.catch(() =>
-                Effect.logInfo("browser auto-open unavailable", {
-                  hint: `Open ${target} in your browser.`,
-                }),
-              ),
-            );
-          }
-        }),
+    if (!config.devUrl && !config.staticDir) {
+      yield* Effect.logWarning(
+        "web bundle missing and no VITE_DEV_SERVER_URL; web UI unavailable",
+        {
+          hint: "Run `bun run --cwd apps/web build` or set VITE_DEV_SERVER_URL for dev mode.",
+        },
       );
-      yield* Effect.forkChild(recordStartupHeartbeat);
+    }
 
-      return yield* stopSignal;
-    }).pipe(Effect.provide(RuntimeLayerLive(config)));
-  });
+    yield* start;
+    yield* Effect.forkChild(recordStartupHeartbeat);
+
+    const localUrl = `http://localhost:${config.port}`;
+    const bindUrl =
+      config.host && !isWildcardHost(config.host)
+        ? `http://${formatHostForUrl(config.host)}:${config.port}`
+        : localUrl;
+    const { authToken, devUrl, ...safeConfig } = config;
+    yield* Effect.logInfo("T3 Code running", {
+      ...safeConfig,
+      devUrl: devUrl?.toString(),
+      authEnabled: Boolean(authToken),
+    });
+
+    if (!config.noBrowser) {
+      const target = config.devUrl?.toString() ?? bindUrl;
+      yield* openDeps.openBrowser(target).pipe(
+        Effect.catch(() =>
+          Effect.logInfo("browser auto-open unavailable", {
+            hint: `Open ${target} in your browser.`,
+          }),
+        ),
+      );
+    }
+
+    return yield* stopSignal;
+  }).pipe(Effect.provide(LayerLive(input)));
 
 /**
  * These flags mirrors the environment variables and the config shape.

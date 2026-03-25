@@ -24,6 +24,7 @@ import { useAppSettings } from "../appSettings";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 import { DEFAULT_RUNTIME_MODE } from "../types";
 import { getLatestWelcome } from "../wsNativeApi";
+import { EMBEDDED_MODE, EMBEDDED_PROJECT_CWD, postThreadIdToHost } from "../embedded";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
 const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
@@ -31,53 +32,6 @@ const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
 const DIFF_INLINE_DEFAULT_WIDTH = "clamp(28rem,48vw,44rem)";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
-const EMBEDDED_MODE = (() => {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("embedded") === "1") return true;
-    const hash = window.location.hash;
-    if (hash.includes("embedded=1")) return true;
-    return false;
-  } catch {
-    return false;
-  }
-})();
-
-/**
- * Read the optional `projectCwd` query parameter that cmux passes when
- * opening a chat panel so that the embedded t3code instance can bind the
- * thread to the correct workspace project.
- */
-const EMBEDDED_PROJECT_CWD: string | null = (() => {
-  if (!EMBEDDED_MODE) return null;
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const cwd = params.get("projectCwd");
-    return cwd && cwd.trim().length > 0 ? cwd.trim() : null;
-  } catch {
-    return null;
-  }
-})();
-
-declare global {
-  interface Window {
-    webkit?: {
-      messageHandlers?: {
-        cmuxThreadSync?: {
-          postMessage: (message: { threadId: string }) => void;
-        };
-      };
-    };
-  }
-}
-
-const postThreadIdToEmbeddedHost = (threadId: ThreadId) => {
-  try {
-    window.webkit?.messageHandlers?.cmuxThreadSync?.postMessage({ threadId });
-  } catch {
-    // Ignore host bridge failures outside the embedded cmux environment.
-  }
-};
 
 const DiffPanelSheet = (props: {
   children: ReactNode;
@@ -316,7 +270,7 @@ function ChatThreadRouteView() {
   ]);
 
   useEffect(() => {
-    postThreadIdToEmbeddedHost(threadId);
+    postThreadIdToHost(threadId);
   }, [threadId]);
 
   if (!threadsHydrated || !routeThreadExists) {
