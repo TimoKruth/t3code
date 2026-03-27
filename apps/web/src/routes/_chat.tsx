@@ -11,7 +11,7 @@ import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { resolveSidebarNewThreadEnvMode } from "~/components/Sidebar.logic";
-import { useAppSettings } from "~/appSettings";
+import { useSettings } from "~/hooks/useSettings";
 import { Sidebar, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 import { EMBEDDED_MODE } from "../embedded";
 
@@ -32,7 +32,7 @@ function ChatRouteGlobalShortcuts() {
       ? selectThreadTerminalState(state.terminalStateByThreadId, routeThreadId).terminalOpen
       : false,
   );
-  const { settings: appSettings } = useAppSettings();
+  const appSettings = useSettings();
 
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
