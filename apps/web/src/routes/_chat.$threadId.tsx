@@ -20,8 +20,8 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useStore } from "../store";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
 import { resolveSidebarNewThreadEnvMode } from "../components/Sidebar.logic";
-import { useAppSettings } from "../appSettings";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { useSettings } from "~/hooks/useSettings";
 import { DEFAULT_RUNTIME_MODE } from "../types";
 import { getLatestWelcome } from "../wsNativeApi";
 import { EMBEDDED_MODE, EMBEDDED_PROJECT_CWD, postThreadIdToHost } from "../embedded";
@@ -166,7 +166,7 @@ const DiffPanelInlineSidebar = (props: {
 };
 
 function ChatThreadRouteView() {
-  const threadsHydrated = useStore((store) => store.threadsHydrated);
+  const bootstrapComplete = useStore((store) => store.bootstrapComplete);
   const navigate = useNavigate();
   const threadId = Route.useParams({
     select: (params) => ThreadId.makeUnsafe(params.threadId),
@@ -180,7 +180,7 @@ function ChatThreadRouteView() {
   const routeThreadExists = threadExists || draftThreadExists;
   const diffOpen = search.diff === "1";
   const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
-  const { settings: appSettings } = useAppSettings();
+  const appSettings = useSettings();
   // TanStack Router keeps active route components mounted across param-only navigations
   // unless remountDeps are configured, so this stays warm across thread switches.
   const [hasOpenedDiff, setHasOpenedDiff] = useState(diffOpen);
@@ -209,7 +209,7 @@ function ChatThreadRouteView() {
   }, [diffOpen]);
 
   useEffect(() => {
-    if (!threadsHydrated) {
+    if (!bootstrapComplete) {
       return;
     }
 
@@ -262,18 +262,18 @@ function ChatThreadRouteView() {
     }
   }, [
     appSettings.defaultThreadEnvMode,
+    bootstrapComplete,
     navigate,
     projects,
     routeThreadExists,
     threadId,
-    threadsHydrated,
   ]);
 
   useEffect(() => {
     postThreadIdToHost(threadId);
   }, [threadId]);
 
-  if (!threadsHydrated || !routeThreadExists) {
+  if (!bootstrapComplete || !routeThreadExists) {
     return null;
   }
 

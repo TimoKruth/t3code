@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
+import { EMBEDDED_MODE } from "../embedded";
 import ThreadSidebar from "./Sidebar";
 import { Sidebar, SidebarProvider, SidebarRail } from "./ui/sidebar";
 
@@ -26,6 +27,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       unsubscribe?.();
     };
   }, [navigate]);
+
+  if (EMBEDDED_MODE) {
+    return <SidebarProvider defaultOpen={false}>{children}</SidebarProvider>;
+  }
 
   return (
     <SidebarProvider defaultOpen>
