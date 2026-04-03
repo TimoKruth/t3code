@@ -188,11 +188,34 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const providers = yield* registry.listProviders();
   const adapters = yield* Effect.forEach(providers, (provider) => registry.getByProvider(provider));
+  const markRuntimeStopped = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
+    directory.getBinding(event.threadId).pipe(
+      Effect.flatMap((bindingOption) =>
+        Option.match(bindingOption, {
+          onNone: () => Effect.void,
+          onSome: (binding) =>
+            directory.upsert({
+              threadId: event.threadId,
+              provider: binding.provider,
+              status: "stopped",
+              runtimePayload: {
+                activeTurnId: null,
+                lastRuntimeEvent: "session.exited",
+                lastRuntimeEventAt: new Date().toISOString(),
+              },
+            }),
+        }),
+      ),
+      Effect.catch(() => Effect.void),
+    );
   const processRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     increment(providerRuntimeEventsTotal, {
       provider: event.provider,
       eventType: event.type,
-    }).pipe(Effect.andThen(publishRuntimeEvent(event)));
+    }).pipe(
+      Effect.andThen(publishRuntimeEvent(event)),
+      Effect.tap(() => (event.type === "session.exited" ? markRuntimeStopped(event) : Effect.void)),
+    );
 
   const worker = Effect.forever(
     Queue.take(runtimeEventQueue).pipe(Effect.flatMap(processRuntimeEvent)),

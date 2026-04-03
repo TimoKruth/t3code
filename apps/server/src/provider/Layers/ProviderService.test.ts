@@ -1001,6 +1001,56 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
     }),
   );
 
+  it.effect("updates provider_session_runtime to stopped on session.exited", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
+      const session = yield* provider.startSession(asThreadId("thread-stopped"), {
+        provider: "codex",
+        threadId: asThreadId("thread-stopped"),
+        runtimeMode: "full-access",
+      });
+
+      yield* provider.sendTurn({
+        threadId: session.threadId,
+        input: "hello",
+        attachments: [],
+      });
+
+      fanout.codex.emit({
+        type: "session.exited",
+        eventId: asEventId("evt-stop-1"),
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        threadId: session.threadId,
+        payload: {
+          reason: "adapter finished",
+        },
+      });
+      yield* sleep(50);
+
+      const stoppedRuntime = yield* runtimeRepository.getByThreadId({
+        threadId: session.threadId,
+      });
+      assert.equal(Option.isSome(stoppedRuntime), true);
+      if (Option.isSome(stoppedRuntime)) {
+        assert.equal(stoppedRuntime.value.status, "stopped");
+        const payload = stoppedRuntime.value.runtimePayload;
+        assert.equal(payload !== null && typeof payload === "object", true);
+        if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+          const runtimePayload = payload as {
+            activeTurnId?: string | null;
+            lastRuntimeEvent?: string | null;
+            lastRuntimeEventAt?: string | null;
+          };
+          assert.equal(runtimePayload.activeTurnId, null);
+          assert.equal(runtimePayload.lastRuntimeEvent, "session.exited");
+          assert.equal(typeof runtimePayload.lastRuntimeEventAt, "string");
+        }
+      }
+    }),
+  );
+
   it.effect("keeps subscriber delivery ordered and isolates failing subscribers", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService;

@@ -1,46 +1,13 @@
 import {
   type ContextMenuItem,
   type NativeApi,
-  type ServerConfigUpdatedPayload,
-  type ServerLifecycleWelcomePayload,
-  type ServerProviderUpdatedPayload,
 } from "@t3tools/contracts";
 
 import { showContextMenuFallback } from "./contextMenuFallback";
-import {
-  getLatestWelcome as getLatestServerWelcome,
-  onProvidersUpdated,
-  onServerConfigUpdated as onServerConfigUpdatedFromState,
-  onWelcome,
-  resetServerStateForTests,
-} from "./rpc/serverState";
+import { resetServerStateForTests } from "./rpc/serverState";
 import { __resetWsRpcClientForTests, getWsRpcClient } from "./wsRpcClient";
 
 let instance: { api: NativeApi } | null = null;
-
-export function getLatestWelcome(): ServerLifecycleWelcomePayload | null {
-  return getLatestServerWelcome();
-}
-
-export function onServerWelcome(
-  listener: (payload: ServerLifecycleWelcomePayload) => void,
-): () => void {
-  return onWelcome(listener);
-}
-
-export function onServerConfigUpdated(
-  listener: (payload: ServerConfigUpdatedPayload) => void,
-): () => void {
-  return onServerConfigUpdatedFromState((payload) => {
-    listener(payload);
-  });
-}
-
-export function onServerProvidersUpdated(
-  listener: (payload: ServerProviderUpdatedPayload) => void,
-): () => void {
-  return onProvidersUpdated(listener);
-}
 
 export function __resetWsNativeApiForTests() {
   instance = null;
