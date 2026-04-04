@@ -23,10 +23,6 @@ export const ORCHESTRATION_WS_METHODS = {
   replayEvents: "orchestration.replayEvents",
 } as const;
 
-export const ORCHESTRATION_WS_CHANNELS = {
-  domainEvent: "orchestration.domainEvent",
-} as const;
-
 export const ProviderKind = Schema.Literals(["codex", "claudeAgent"]);
 export type ProviderKind = typeof ProviderKind.Type;
 export const ProviderApprovalPolicy = Schema.Literals([
@@ -42,41 +38,25 @@ export const ProviderSandboxMode = Schema.Literals([
   "danger-full-access",
 ]);
 export type ProviderSandboxMode = typeof ProviderSandboxMode.Type;
+
 export const DEFAULT_PROVIDER_KIND: ProviderKind = "codex";
 
 export const CodexModelSelection = Schema.Struct({
   provider: Schema.Literal("codex"),
   model: TrimmedNonEmptyString,
-  options: Schema.optional(CodexModelOptions),
+  options: Schema.optionalKey(CodexModelOptions),
 });
 export type CodexModelSelection = typeof CodexModelSelection.Type;
 
 export const ClaudeModelSelection = Schema.Struct({
   provider: Schema.Literal("claudeAgent"),
   model: TrimmedNonEmptyString,
-  options: Schema.optional(ClaudeModelOptions),
+  options: Schema.optionalKey(ClaudeModelOptions),
 });
 export type ClaudeModelSelection = typeof ClaudeModelSelection.Type;
 
 export const ModelSelection = Schema.Union([CodexModelSelection, ClaudeModelSelection]);
 export type ModelSelection = typeof ModelSelection.Type;
-
-export const CodexProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  homePath: Schema.optional(TrimmedNonEmptyString),
-});
-
-export const ClaudeProviderStartOptions = Schema.Struct({
-  binaryPath: Schema.optional(TrimmedNonEmptyString),
-  permissionMode: Schema.optional(TrimmedNonEmptyString),
-  maxThinkingTokens: Schema.optional(NonNegativeInt),
-});
-
-export const ProviderStartOptions = Schema.Struct({
-  codex: Schema.optional(CodexProviderStartOptions),
-  claudeAgent: Schema.optional(ClaudeProviderStartOptions),
-});
-export type ProviderStartOptions = typeof ProviderStartOptions.Type;
 
 export const RuntimeMode = Schema.Literals(["approval-required", "full-access"]);
 export type RuntimeMode = typeof RuntimeMode.Type;
@@ -300,6 +280,7 @@ export const OrchestrationThread = Schema.Struct({
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(() => null)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(Schema.withDecodingDefault(() => [])),
@@ -365,6 +346,18 @@ const ThreadDeleteCommand = Schema.Struct({
   threadId: ThreadId,
 });
 
+const ThreadArchiveCommand = Schema.Struct({
+  type: Schema.Literal("thread.archive"),
+  commandId: CommandId,
+  threadId: ThreadId,
+});
+
+const ThreadUnarchiveCommand = Schema.Struct({
+  type: Schema.Literal("thread.unarchive"),
+  commandId: CommandId,
+  threadId: ThreadId,
+});
+
 const ThreadMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("thread.meta.update"),
   commandId: CommandId,
@@ -402,8 +395,7 @@ export const ThreadTurnStartCommand = Schema.Struct({
     attachments: Schema.Array(ChatAttachment),
   }),
   modelSelection: Schema.optional(ModelSelection),
-  providerOptions: Schema.optional(ProviderStartOptions),
-  assistantDeliveryMode: Schema.optional(AssistantDeliveryMode),
+  titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(() => DEFAULT_RUNTIME_MODE)),
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
@@ -423,8 +415,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     attachments: Schema.Array(UploadChatAttachment),
   }),
   modelSelection: Schema.optional(ModelSelection),
-  providerOptions: Schema.optional(ProviderStartOptions),
-  assistantDeliveryMode: Schema.optional(AssistantDeliveryMode),
+  titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
@@ -478,6 +469,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectDeleteCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
+  ThreadArchiveCommand,
+  ThreadUnarchiveCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -497,6 +490,8 @@ export const ClientOrchestrationCommand = Schema.Union([
   ProjectDeleteCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
+  ThreadArchiveCommand,
+  ThreadUnarchiveCommand,
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
@@ -597,6 +592,8 @@ export const OrchestrationEventType = Schema.Literals([
   "project.deleted",
   "thread.created",
   "thread.deleted",
+  "thread.archived",
+  "thread.unarchived",
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
@@ -663,6 +660,17 @@ export const ThreadDeletedPayload = Schema.Struct({
   deletedAt: IsoDateTime,
 });
 
+export const ThreadArchivedPayload = Schema.Struct({
+  threadId: ThreadId,
+  archivedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadUnarchivedPayload = Schema.Struct({
+  threadId: ThreadId,
+  updatedAt: IsoDateTime,
+});
+
 export const ThreadMetaUpdatedPayload = Schema.Struct({
   threadId: ThreadId,
   title: Schema.optional(TrimmedNonEmptyString),
@@ -702,8 +710,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   modelSelection: Schema.optional(ModelSelection),
-  providerOptions: Schema.optional(ProviderStartOptions),
-  assistantDeliveryMode: Schema.optional(AssistantDeliveryMode),
+  titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(() => DEFAULT_RUNTIME_MODE)),
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
@@ -820,6 +827,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.deleted"),
     payload: ThreadDeletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.archived"),
+    payload: ThreadArchivedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.unarchived"),
+    payload: ThreadUnarchivedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -1016,3 +1033,43 @@ export const OrchestrationRpcSchemas = {
     output: OrchestrationReplayEventsResult,
   },
 } as const;
+
+export class OrchestrationGetSnapshotError extends Schema.TaggedErrorClass<OrchestrationGetSnapshotError>()(
+  "OrchestrationGetSnapshotError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<OrchestrationDispatchCommandError>()(
+  "OrchestrationDispatchCommandError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationGetTurnDiffError extends Schema.TaggedErrorClass<OrchestrationGetTurnDiffError>()(
+  "OrchestrationGetTurnDiffError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationGetFullThreadDiffError extends Schema.TaggedErrorClass<OrchestrationGetFullThreadDiffError>()(
+  "OrchestrationGetFullThreadDiffError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationReplayEventsError extends Schema.TaggedErrorClass<OrchestrationReplayEventsError>()(
+  "OrchestrationReplayEventsError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}

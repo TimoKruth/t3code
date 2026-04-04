@@ -16,15 +16,12 @@ import {
   parseDiffRouteSearch,
   stripDiffSearchParams,
 } from "../diffRouteSearch";
+import { useEmbeddedDraftThreadBootstrap } from "../hooks/useEmbeddedDraftThreadBootstrap";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useStore } from "../store";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
-import { resolveSidebarNewThreadEnvMode } from "../components/Sidebar.logic";
-import { useAppSettings } from "../appSettings";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
-import { DEFAULT_RUNTIME_MODE } from "../types";
-import { getLatestWelcome } from "../wsNativeApi";
-import { EMBEDDED_MODE, EMBEDDED_PROJECT_CWD, postThreadIdToHost } from "../embedded";
+import { useSettings } from "~/hooks/useSettings";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
 const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
@@ -166,13 +163,12 @@ const DiffPanelInlineSidebar = (props: {
 };
 
 function ChatThreadRouteView() {
-  const threadsHydrated = useStore((store) => store.threadsHydrated);
+  const bootstrapComplete = useStore((store) => store.bootstrapComplete);
   const navigate = useNavigate();
   const threadId = Route.useParams({
     select: (params) => ThreadId.makeUnsafe(params.threadId),
   });
   const search = Route.useSearch();
-  const projects = useStore((store) => store.projects);
   const threadExists = useStore((store) => store.threads.some((thread) => thread.id === threadId));
   const draftThreadExists = useComposerDraftStore((store) =>
     Object.hasOwn(store.draftThreadsByThreadId, threadId),
@@ -180,7 +176,7 @@ function ChatThreadRouteView() {
   const routeThreadExists = threadExists || draftThreadExists;
   const diffOpen = search.diff === "1";
   const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
-  const { settings: appSettings } = useAppSettings();
+  const appSettings = useSettings();
   // TanStack Router keeps active route components mounted across param-only navigations
   // unless remountDeps are configured, so this stays warm across thread switches.
   const [hasOpenedDiff, setHasOpenedDiff] = useState(diffOpen);
@@ -208,72 +204,24 @@ function ChatThreadRouteView() {
     }
   }, [diffOpen]);
 
+  useEmbeddedDraftThreadBootstrap({
+    bootstrapComplete,
+    routeThreadExists,
+    threadId,
+    defaultThreadEnvMode: appSettings.defaultThreadEnvMode,
+  });
+
   useEffect(() => {
-    if (!threadsHydrated) {
-      return;
-    }
-
-    if (EMBEDDED_MODE && !routeThreadExists) {
-      // Resolve the correct project for this embedded chat.  Priority:
-      // 1. projectCwd query param from cmux → match project by cwd
-      // 2. bootstrapProjectId from the server welcome message
-      // 3. First available project (legacy fallback)
-      let projectId: string | undefined;
-
-      if (EMBEDDED_PROJECT_CWD && projects.length > 0) {
-        const match = projects.find((p) => p.cwd === EMBEDDED_PROJECT_CWD);
-        projectId = match?.id;
-      }
-
-      if (!projectId) {
-        const welcome = getLatestWelcome();
-        if (welcome?.bootstrapProjectId) {
-          const exists = projects.some((p) => p.id === welcome.bootstrapProjectId);
-          if (exists) {
-            projectId = welcome.bootstrapProjectId;
-          }
-        }
-      }
-
-      if (!projectId) {
-        projectId = projects[0]?.id;
-      }
-
-      if (!projectId) {
-        return;
-      }
-
-      useComposerDraftStore.getState().ensureDraftThread(threadId, {
-        projectId: projectId as typeof projects[0]["id"],
-        createdAt: new Date().toISOString(),
-        envMode: resolveSidebarNewThreadEnvMode({
-          defaultEnvMode: appSettings.defaultThreadEnvMode,
-        }),
-        runtimeMode: DEFAULT_RUNTIME_MODE,
-        branch: null,
-        worktreePath: null,
-      });
+    if (!bootstrapComplete) {
       return;
     }
 
     if (!routeThreadExists) {
       void navigate({ to: "/", replace: true });
-      return;
     }
-  }, [
-    appSettings.defaultThreadEnvMode,
-    navigate,
-    projects,
-    routeThreadExists,
-    threadId,
-    threadsHydrated,
-  ]);
+  }, [bootstrapComplete, navigate, routeThreadExists]);
 
-  useEffect(() => {
-    postThreadIdToHost(threadId);
-  }, [threadId]);
-
-  if (!threadsHydrated || !routeThreadExists) {
+  if (!bootstrapComplete || !routeThreadExists) {
     return null;
   }
 
