@@ -1,3 +1,4 @@
+import { scopeProjectRef } from "@t3tools/client-runtime";
 import {
   DEFAULT_RUNTIME_MODE,
   type ServerLifecycleWelcomePayload,
@@ -8,8 +9,10 @@ import { useEffect, useState } from "react";
 import { resolveSidebarNewThreadEnvMode } from "../components/Sidebar.logic";
 import { type DraftThreadEnvMode, useComposerDraftStore } from "../composerDraftStore";
 import { EMBEDDED_MODE, EMBEDDED_PROJECT_CWD, postThreadIdToHost } from "../embedded";
+import { newDraftId } from "../lib/utils";
+import { deriveLogicalProjectKey } from "../logicalProject";
 import { useServerWelcomeSubscription } from "../rpc/serverState";
-import { useStore } from "../store";
+import { selectProjectsAcrossEnvironments, useStore } from "../store";
 import { resolveEmbeddedBootstrapProjectId } from "./embeddedDraftThreadBootstrap";
 
 export function useEmbeddedDraftThreadBootstrap(input: {
@@ -19,7 +22,7 @@ export function useEmbeddedDraftThreadBootstrap(input: {
   readonly defaultThreadEnvMode: DraftThreadEnvMode;
 }): void {
   const { bootstrapComplete, routeThreadExists, threadId, defaultThreadEnvMode } = input;
-  const projects = useStore((store) => store.projects);
+  const projects = useStore((store) => selectProjectsAcrossEnvironments(store));
   const [latestWelcome, setLatestWelcome] = useState<ServerLifecycleWelcomePayload | null>(null);
 
   useServerWelcomeSubscription(setLatestWelcome);
@@ -42,15 +45,27 @@ export function useEmbeddedDraftThreadBootstrap(input: {
       return;
     }
 
-    useComposerDraftStore.getState().ensureDraftThread(threadId, {
-      projectId,
-      createdAt: new Date().toISOString(),
-      envMode: resolveSidebarNewThreadEnvMode({
-        defaultEnvMode: defaultThreadEnvMode,
-      }),
-      runtimeMode: DEFAULT_RUNTIME_MODE,
-      branch: null,
-      worktreePath: null,
-    });
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) {
+      return;
+    }
+
+    const projectRef = scopeProjectRef(project.environmentId, projectId);
+    const logicalProjectKey = deriveLogicalProjectKey(project);
+    const draftId = newDraftId();
+
+    useComposerDraftStore.getState().setLogicalProjectDraftThreadId(
+      logicalProjectKey,
+      projectRef,
+      draftId,
+      {
+        threadId,
+        createdAt: new Date().toISOString(),
+        envMode: resolveSidebarNewThreadEnvMode({
+          defaultEnvMode: defaultThreadEnvMode,
+        }),
+        runtimeMode: DEFAULT_RUNTIME_MODE,
+      },
+    );
   }, [bootstrapComplete, defaultThreadEnvMode, latestWelcome, projects, routeThreadExists, threadId]);
 }
