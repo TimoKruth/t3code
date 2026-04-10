@@ -4,11 +4,11 @@ import { describe, expect, it } from "vitest";
 import { resolveEmbeddedBootstrapProjectId } from "./embeddedDraftThreadBootstrap";
 import type { Project } from "../types";
 
-const TEST_ENVIRONMENT_ID = EnvironmentId.makeUnsafe("environment-local");
+const TEST_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 
 const projects: readonly Project[] = [
   {
-    id: ProjectId.makeUnsafe("project-1"),
+    id: ProjectId.make("project-1"),
     environmentId: TEST_ENVIRONMENT_ID,
     name: "Project One",
     cwd: "/workspace/project-one",
@@ -16,7 +16,7 @@ const projects: readonly Project[] = [
     scripts: [],
   },
   {
-    id: ProjectId.makeUnsafe("project-2"),
+    id: ProjectId.make("project-2"),
     environmentId: TEST_ENVIRONMENT_ID,
     name: "Project Two",
     cwd: "/workspace/project-two",
@@ -37,7 +37,7 @@ function makeWelcome(bootstrapProjectId?: Project["id"]): ServerLifecycleWelcome
     cwd: "/workspace",
     projectName: "t3code",
     bootstrapProjectId,
-    bootstrapThreadId: ThreadId.makeUnsafe("thread-1"),
+    bootstrapThreadId: ThreadId.make("thread-1"),
   };
 }
 
@@ -66,7 +66,7 @@ describe("resolveEmbeddedBootstrapProjectId", () => {
     expect(
       resolveEmbeddedBootstrapProjectId({
         projects,
-        latestWelcome: makeWelcome(ProjectId.makeUnsafe("project-missing")),
+        latestWelcome: makeWelcome(ProjectId.make("project-missing")),
         embeddedProjectCwd: "/workspace/missing",
       }),
     ).toBe(projects[0]!.id);
