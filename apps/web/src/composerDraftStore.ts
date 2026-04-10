@@ -38,6 +38,7 @@ import {
 } from "./lib/terminalContext";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { useShallow } from "zustand/react/shallow";
 import { createDebouncedStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
@@ -45,6 +46,7 @@ import { UnifiedSettings } from "@t3tools/contracts/settings";
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
 const COMPOSER_DRAFT_STORAGE_VERSION = 5;
 const DraftThreadEnvModeSchema = Schema.Literals(["local", "worktree"]);
+const isRuntimeMode = Schema.is(RuntimeMode);
 export type DraftThreadEnvMode = typeof DraftThreadEnvModeSchema.Type;
 
 export const DraftId = Schema.String.pipe(Schema.brand("DraftId"));
@@ -377,6 +379,11 @@ export interface EffectiveComposerModelState {
   modelOptions: ProviderModelOptions | null;
 }
 
+interface ComposerDraftModelState {
+  activeProvider: ProviderKind | null;
+  modelSelectionByProvider: Partial<Record<ProviderKind, ModelSelection>>;
+}
+
 function providerModelOptionsFromSelection(
   modelSelection: ModelSelection | null | undefined,
 ): ProviderModelOptions | null {
@@ -419,6 +426,10 @@ Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderKind, ModelSelection>> =
   Object.freeze({});
+const EMPTY_COMPOSER_DRAFT_MODEL_STATE = Object.freeze<ComposerDraftModelState>({
+  activeProvider: null,
+  modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
+});
 
 const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   prompt: "",
@@ -915,7 +926,7 @@ function normalizeComposerTarget(
 ): ComposerThreadTarget | null {
   if (typeof target === "string") {
     const draftId = target.trim();
-    return draftId.length > 0 ? DraftId.makeUnsafe(draftId) : null;
+    return draftId.length > 0 ? DraftId.make(draftId) : null;
   }
   return target;
 }
@@ -1001,10 +1012,22 @@ function createDraftThreadState(
     interactionMode?: ProviderInteractionMode;
   },
 ): DraftThreadState {
+  const projectChanged =
+    existingThread !== undefined &&
+    (existingThread.environmentId !== projectRef.environmentId ||
+      existingThread.projectId !== projectRef.projectId);
   const nextWorktreePath =
     options?.worktreePath === undefined
-      ? (existingThread?.worktreePath ?? null)
+      ? projectChanged
+        ? null
+        : (existingThread?.worktreePath ?? null)
       : (options.worktreePath ?? null);
+  const nextBranch =
+    options?.branch === undefined
+      ? projectChanged
+        ? null
+        : (existingThread?.branch ?? null)
+      : (options.branch ?? null);
   return {
     threadId,
     environmentId: projectRef.environmentId,
@@ -1014,11 +1037,15 @@ function createDraftThreadState(
     runtimeMode: options?.runtimeMode ?? existingThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
     interactionMode:
       options?.interactionMode ?? existingThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
-    branch:
-      options?.branch === undefined ? (existingThread?.branch ?? null) : (options.branch ?? null),
+    branch: nextBranch,
     worktreePath: nextWorktreePath,
     envMode:
-      options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
+      options?.envMode ??
+      (nextWorktreePath
+        ? "worktree"
+        : projectChanged
+          ? "local"
+          : (existingThread?.envMode ?? "local")),
     promotedTo: null,
   };
 }
@@ -1179,11 +1206,9 @@ function normalizePersistedDraftThreads(
           typeof createdAt === "string" && createdAt.length > 0
             ? createdAt
             : new Date().toISOString(),
-        runtimeMode:
-          candidateDraftThread.runtimeMode === "approval-required" ||
-          candidateDraftThread.runtimeMode === "full-access"
-            ? candidateDraftThread.runtimeMode
-            : DEFAULT_RUNTIME_MODE,
+        runtimeMode: isRuntimeMode(candidateDraftThread.runtimeMode)
+          ? candidateDraftThread.runtimeMode
+          : DEFAULT_RUNTIME_MODE,
         interactionMode:
           candidateDraftThread.interactionMode === "plan" ||
           candidateDraftThread.interactionMode === "default"
@@ -1302,11 +1327,9 @@ function normalizePersistedDraftsByThreadId(
           return normalized ? [normalized] : [];
         })
       : [];
-    const runtimeMode =
-      draftCandidate.runtimeMode === "approval-required" ||
-      draftCandidate.runtimeMode === "full-access"
-        ? draftCandidate.runtimeMode
-        : null;
+    const runtimeMode = isRuntimeMode(draftCandidate.runtimeMode)
+      ? draftCandidate.runtimeMode
+      : null;
     const interactionMode =
       draftCandidate.interactionMode === "plan" || draftCandidate.interactionMode === "default"
         ? draftCandidate.interactionMode
@@ -1644,7 +1667,7 @@ function verifyPersistedAttachments(
   });
 }
 
-function hydreatePersistedComposerImageAttachment(
+function hydratePersistedComposerImageAttachment(
   attachment: PersistedComposerImageAttachment,
 ): File | null {
   const commaIndex = attachment.dataUrl.indexOf(",");
@@ -1680,7 +1703,7 @@ function hydrateImagesFromPersisted(
   attachments: ReadonlyArray<PersistedComposerImageAttachment>,
 ): ComposerImageAttachment[] {
   return attachments.flatMap((attachment) => {
-    const file = hydreatePersistedComposerImageAttachment(attachment);
+    const file = hydratePersistedComposerImageAttachment(attachment);
     if (!file) return [];
 
     return [
@@ -1781,7 +1804,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           if (!draftThread || isDraftThreadPromoting(draftThread)) {
             return null;
           }
-          return toProjectDraftSession(DraftId.makeUnsafe(draftId), draftThread);
+          return toProjectDraftSession(DraftId.make(draftId), draftThread);
         },
         getDraftThreadByProjectRef: (projectRef) => {
           return get().getDraftSessionByProjectRef(projectRef);
@@ -1795,7 +1818,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               draftThread.projectId === projectRef.projectId &&
               draftThread.environmentId === projectRef.environmentId
             ) {
-              return toProjectDraftSession(DraftId.makeUnsafe(draftId), draftThread);
+              return toProjectDraftSession(DraftId.make(draftId), draftThread);
             }
           }
           return null;
@@ -1814,7 +1837,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
         },
         getDraftThread: (threadRef) => {
           if (typeof threadRef === "string") {
-            return get().getDraftSession(DraftId.makeUnsafe(threadRef));
+            return get().getDraftSession(DraftId.make(threadRef));
           }
           return get().getDraftSessionByRef(threadRef);
         },
@@ -1840,7 +1863,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               state.logicalProjectDraftThreadKeyByLogicalProjectKey[normalizedLogicalProjectKey];
             const nextDraftThread = createDraftThreadState(
               projectRef,
-              options?.threadId ?? existingThread?.threadId ?? ThreadId.makeUnsafe(draftId),
+              options?.threadId ?? existingThread?.threadId ?? ThreadId.make(draftId),
               normalizedLogicalProjectKey,
               existingThread,
               options,
@@ -1908,10 +1931,21 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             ) {
               return state;
             }
+            const projectChanged =
+              nextProjectRef.environmentId !== existing.environmentId ||
+              nextProjectRef.projectId !== existing.projectId;
             const nextWorktreePath =
               options.worktreePath === undefined
-                ? existing.worktreePath
+                ? projectChanged
+                  ? null
+                  : existing.worktreePath
                 : (options.worktreePath ?? null);
+            const nextBranch =
+              options.branch === undefined
+                ? projectChanged
+                  ? null
+                  : existing.branch
+                : (options.branch ?? null);
             const nextDraftThread: DraftThreadState = {
               threadId: existing.threadId,
               environmentId: nextProjectRef.environmentId,
@@ -1923,10 +1957,15 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   : options.createdAt || existing.createdAt,
               runtimeMode: options.runtimeMode ?? existing.runtimeMode,
               interactionMode: options.interactionMode ?? existing.interactionMode,
-              branch: options.branch === undefined ? existing.branch : (options.branch ?? null),
+              branch: nextBranch,
               worktreePath: nextWorktreePath,
               envMode:
-                options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
+                options.envMode ??
+                (nextWorktreePath
+                  ? "worktree"
+                  : projectChanged
+                    ? "local"
+                    : (existing.envMode ?? "local")),
               promotedTo: existing.promotedTo ?? null,
             };
             const isUnchanged =
@@ -2341,10 +2380,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           if (threadKey.length === 0) {
             return;
           }
-          const nextRuntimeMode =
-            runtimeMode === "approval-required" || runtimeMode === "full-access"
-              ? runtimeMode
-              : null;
+          const nextRuntimeMode = isRuntimeMode(runtimeMode) ? runtimeMode : null;
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey];
             if (!existing && nextRuntimeMode === null) {
@@ -2402,10 +2438,9 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           if (!threadKey || !threadId) {
             return;
           }
-          get().addImages(
-            typeof threadRef === "string" ? DraftId.makeUnsafe(threadKey) : threadRef,
-            [image],
-          );
+          get().addImages(typeof threadRef === "string" ? DraftId.make(threadKey) : threadRef, [
+            image,
+          ]);
         },
         addImages: (threadRef, images) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
@@ -2530,7 +2565,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return;
           }
           get().addTerminalContexts(
-            typeof threadRef === "string" ? DraftId.makeUnsafe(threadKey) : threadRef,
+            typeof threadRef === "string" ? DraftId.make(threadKey) : threadRef,
             [context],
           );
         },
@@ -2738,6 +2773,22 @@ export function useComposerThreadDraft(threadRef: ComposerThreadTarget): Compose
   });
 }
 
+export function useComposerDraftModelState(
+  threadRef: ComposerThreadTarget,
+): ComposerDraftModelState {
+  return useComposerDraftStore(
+    useShallow((state) => {
+      const draft = getComposerDraftState(state, threadRef);
+      return draft
+        ? {
+            activeProvider: draft.activeProvider,
+            modelSelectionByProvider: draft.modelSelectionByProvider,
+          }
+        : EMPTY_COMPOSER_DRAFT_MODEL_STATE;
+    }),
+  );
+}
+
 export function useEffectiveComposerModelState(input: {
   threadRef?: ComposerThreadTarget;
   draftId?: DraftId;
@@ -2747,7 +2798,7 @@ export function useEffectiveComposerModelState(input: {
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
-  const draft = useComposerThreadDraft(input.threadRef ?? input.draftId ?? DraftId.makeUnsafe(""));
+  const draft = useComposerDraftModelState(input.threadRef ?? input.draftId ?? DraftId.make(""));
 
   return useMemo(
     () =>
@@ -2782,7 +2833,7 @@ export function markPromotedDraftThread(threadId: ThreadId): void {
   const draftThreadTargets: ComposerThreadTarget[] = [];
   for (const [draftId, draftThread] of Object.entries(store.draftThreadsByThreadKey)) {
     if (draftThread.threadId === threadId) {
-      draftThreadTargets.push(DraftId.makeUnsafe(draftId));
+      draftThreadTargets.push(DraftId.make(draftId));
     }
   }
   if (draftThreadTargets.length === 0) {
@@ -2800,7 +2851,7 @@ export function markPromotedDraftThreadByRef(threadRef: ScopedThreadRef): void {
       draftThread.environmentId === threadRef.environmentId &&
       draftThread.threadId === threadRef.threadId
     ) {
-      draftStore.markDraftThreadPromoting(DraftId.makeUnsafe(draftId), threadRef);
+      draftStore.markDraftThreadPromoting(DraftId.make(draftId), threadRef);
     }
   }
 }
@@ -2825,7 +2876,7 @@ export function finalizePromotedDraftThreadByRef(threadRef: ScopedThreadRef): vo
       draftThread.promotedTo.environmentId === threadRef.environmentId &&
       draftThread.promotedTo.threadId === threadRef.threadId
     ) {
-      draftStore.finalizePromotedDraftThread(DraftId.makeUnsafe(draftId));
+      draftStore.finalizePromotedDraftThread(DraftId.make(draftId));
     }
   }
 }

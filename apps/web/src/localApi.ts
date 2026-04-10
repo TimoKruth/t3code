@@ -1,19 +1,32 @@
 import type { ContextMenuItem, LocalApi } from "@t3tools/contracts";
 
 import { resetGitStatusStateForTests } from "./lib/gitStatusState";
-
-import { __resetWsRpcAtomClientForTests } from "./rpc/client";
 import { resetRequestLatencyStateForTests } from "./rpc/requestLatencyState";
 import { resetServerStateForTests } from "./rpc/serverState";
 import { resetWsConnectionStateForTests } from "./rpc/wsConnectionState";
-import { getPrimaryWsRpcClientEntry, WsRpcClient, __resetWsRpcClientForTests } from "./wsRpcClient";
+import {
+  resetSavedEnvironmentRegistryStoreForTests,
+  resetSavedEnvironmentRuntimeStoreForTests,
+} from "./environments/runtime";
+import {
+  getPrimaryEnvironmentConnection,
+  resetEnvironmentServiceForTests,
+} from "./environments/runtime";
+import { type WsRpcClient } from "./rpc/wsRpcClient";
 import { showContextMenuFallback } from "./contextMenuFallback";
+import {
+  readBrowserClientSettings,
+  readBrowserSavedEnvironmentRegistry,
+  readBrowserSavedEnvironmentSecret,
+  removeBrowserSavedEnvironmentSecret,
+  writeBrowserClientSettings,
+  writeBrowserSavedEnvironmentRegistry,
+  writeBrowserSavedEnvironmentSecret,
+} from "./clientPersistenceStorage";
 
 let cachedApi: LocalApi | undefined;
 
-export function createLocalApi(
-  rpcClient: WsRpcClient = getPrimaryWsRpcClientEntry().client,
-): LocalApi {
+export function createLocalApi(rpcClient: WsRpcClient): LocalApi {
   return {
     dialogs: {
       pickFolder: async () => {
@@ -52,6 +65,50 @@ export function createLocalApi(
         return showContextMenuFallback(items, position);
       },
     },
+    persistence: {
+      getClientSettings: async () => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.getClientSettings();
+        }
+        return readBrowserClientSettings();
+      },
+      setClientSettings: async (settings) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.setClientSettings(settings);
+        }
+        writeBrowserClientSettings(settings);
+      },
+      getSavedEnvironmentRegistry: async () => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.getSavedEnvironmentRegistry();
+        }
+        return readBrowserSavedEnvironmentRegistry();
+      },
+      setSavedEnvironmentRegistry: async (records) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.setSavedEnvironmentRegistry(records);
+        }
+        writeBrowserSavedEnvironmentRegistry(records);
+      },
+      getSavedEnvironmentSecret: async (environmentId) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.getSavedEnvironmentSecret(environmentId);
+        }
+        return readBrowserSavedEnvironmentSecret(environmentId);
+      },
+      setSavedEnvironmentSecret: async (environmentId, secret) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.setSavedEnvironmentSecret(environmentId, secret);
+        }
+        return writeBrowserSavedEnvironmentSecret(environmentId, secret);
+      },
+      removeSavedEnvironmentSecret: async (environmentId) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.removeSavedEnvironmentSecret(environmentId);
+        }
+        removeBrowserSavedEnvironmentSecret(environmentId);
+      },
+    },
     server: {
       getConfig: rpcClient.server.getConfig,
       refreshProviders: rpcClient.server.refreshProviders,
@@ -71,7 +128,7 @@ export function readLocalApi(): LocalApi | undefined {
     return cachedApi;
   }
 
-  cachedApi = createLocalApi();
+  cachedApi = createLocalApi(getPrimaryEnvironmentConnection().client);
   return cachedApi;
 }
 
@@ -85,10 +142,13 @@ export function ensureLocalApi(): LocalApi {
 
 export async function __resetLocalApiForTests() {
   cachedApi = undefined;
-  await __resetWsRpcAtomClientForTests();
-  await __resetWsRpcClientForTests();
+  const { __resetClientSettingsPersistenceForTests } = await import("./hooks/useSettings");
+  __resetClientSettingsPersistenceForTests();
+  await resetEnvironmentServiceForTests();
   resetGitStatusStateForTests();
   resetRequestLatencyStateForTests();
+  resetSavedEnvironmentRegistryStoreForTests();
+  resetSavedEnvironmentRuntimeStoreForTests();
   resetServerStateForTests();
   resetWsConnectionStateForTests();
 }

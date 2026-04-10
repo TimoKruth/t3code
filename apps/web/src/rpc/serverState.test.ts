@@ -52,7 +52,7 @@ const defaultProviders: ReadonlyArray<ServerProvider> = [
 ];
 
 const baseEnvironment = {
-  environmentId: EnvironmentId.makeUnsafe("environment-local"),
+  environmentId: EnvironmentId.make("environment-local"),
   label: "Local environment",
   platform: {
     os: "darwin" as const,
@@ -66,6 +66,12 @@ const baseEnvironment = {
 
 const baseServerConfig: ServerConfig = {
   environment: baseEnvironment,
+  auth: {
+    policy: "loopback-browser",
+    bootstrapMethods: ["one-time-token"],
+    sessionMethods: ["browser-session-cookie", "bearer-session-token"],
+    sessionCookieName: "t3_session",
+  },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/.config/keybindings.json",
   keybindings: [],
@@ -211,8 +217,8 @@ describe("serverState", () => {
         environment: baseEnvironment,
         cwd: "/tmp/workspace",
         projectName: "t3-code",
-        bootstrapProjectId: ProjectId.makeUnsafe("project-1"),
-        bootstrapThreadId: ThreadId.makeUnsafe("thread-1"),
+        bootstrapProjectId: ProjectId.make("project-1"),
+        bootstrapThreadId: ThreadId.make("thread-1"),
       },
     });
 
@@ -220,8 +226,8 @@ describe("serverState", () => {
       environment: baseEnvironment,
       cwd: "/tmp/workspace",
       projectName: "t3-code",
-      bootstrapProjectId: ProjectId.makeUnsafe("project-1"),
-      bootstrapThreadId: ThreadId.makeUnsafe("thread-1"),
+      bootstrapProjectId: ProjectId.make("project-1"),
+      bootstrapThreadId: ThreadId.make("thread-1"),
     });
 
     const lateListener = vi.fn();
@@ -230,8 +236,8 @@ describe("serverState", () => {
       environment: baseEnvironment,
       cwd: "/tmp/workspace",
       projectName: "t3-code",
-      bootstrapProjectId: ProjectId.makeUnsafe("project-1"),
-      bootstrapThreadId: ThreadId.makeUnsafe("thread-1"),
+      bootstrapProjectId: ProjectId.make("project-1"),
+      bootstrapThreadId: ThreadId.make("thread-1"),
     });
 
     unsubscribeLate();
