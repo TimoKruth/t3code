@@ -5,4 +5,5 @@
  */
 export const isElectron =
   typeof window !== "undefined" &&
-  (window.desktopBridge !== undefined || window.nativeApi !== undefined);
+  (window.nativeApi !== undefined ||
+    (window.desktopBridge !== undefined && window.__CMUX_EMBEDDED__ !== true));

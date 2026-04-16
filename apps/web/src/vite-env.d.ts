@@ -12,6 +12,7 @@ interface ImportMeta {
 
 declare global {
   interface Window {
+    __CMUX_EMBEDDED__?: boolean;
     nativeApi?: LocalApi;
     desktopBridge?: DesktopBridge;
   }

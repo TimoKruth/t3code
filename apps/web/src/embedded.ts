@@ -25,6 +25,12 @@ export const EMBEDDED_PROJECT_CWD: string | null = (() => {
   return cwd && cwd.trim().length > 0 ? cwd.trim() : null;
 })();
 
+export const EMBEDDED_THREAD_ID: string | null = (() => {
+  if (!EMBEDDED_MODE) return null;
+  const threadId = searchParams.get("threadId");
+  return threadId && threadId.trim().length > 0 ? threadId.trim() : null;
+})();
+
 declare global {
   interface Window {
     webkit?: {

@@ -5,6 +5,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { resolveSidebarNewThreadEnvMode } from "../components/Sidebar.logic";
 import { type DraftThreadEnvMode, useComposerDraftStore } from "../composerDraftStore";
@@ -22,17 +23,26 @@ export function useEmbeddedDraftThreadBootstrap(input: {
   readonly defaultThreadEnvMode: DraftThreadEnvMode;
 }): void {
   const { bootstrapComplete, routeThreadExists, threadId, defaultThreadEnvMode } = input;
-  const projects = useStore((store) => selectProjectsAcrossEnvironments(store));
+  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
   const [latestWelcome, setLatestWelcome] = useState<ServerLifecycleWelcomePayload | null>(null);
+  const normalizedThreadId = threadId.trim();
 
   useServerWelcomeSubscription(setLatestWelcome);
 
   useEffect(() => {
-    postThreadIdToHost(threadId);
-  }, [threadId]);
+    if (normalizedThreadId.length === 0) {
+      return;
+    }
+    postThreadIdToHost(normalizedThreadId);
+  }, [normalizedThreadId]);
 
   useEffect(() => {
-    if (!bootstrapComplete || !EMBEDDED_MODE || routeThreadExists) {
+    if (
+      !bootstrapComplete ||
+      !EMBEDDED_MODE ||
+      routeThreadExists ||
+      normalizedThreadId.length === 0
+    ) {
       return;
     }
 
@@ -59,7 +69,7 @@ export function useEmbeddedDraftThreadBootstrap(input: {
       projectRef,
       draftId,
       {
-        threadId,
+        threadId: normalizedThreadId as ThreadId,
         createdAt: new Date().toISOString(),
         envMode: resolveSidebarNewThreadEnvMode({
           defaultEnvMode: defaultThreadEnvMode,
@@ -67,5 +77,12 @@ export function useEmbeddedDraftThreadBootstrap(input: {
         runtimeMode: DEFAULT_RUNTIME_MODE,
       },
     );
-  }, [bootstrapComplete, defaultThreadEnvMode, latestWelcome, projects, routeThreadExists, threadId]);
+  }, [
+    bootstrapComplete,
+    defaultThreadEnvMode,
+    latestWelcome,
+    normalizedThreadId,
+    projects,
+    routeThreadExists,
+  ]);
 }
