@@ -19,7 +19,7 @@ import {
 } from "../diffRouteSearch";
 import { useEmbeddedDraftThreadBootstrap } from "../hooks/useEmbeddedDraftThreadBootstrap";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { selectEnvironmentState, selectThreadByRef, useStore } from "../store";
+import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
@@ -175,7 +175,7 @@ function ChatThreadRouteView() {
     (store) => selectEnvironmentState(store, threadRef?.environmentId ?? null).bootstrapComplete,
   );
   const serverThread = useStore(useMemo(() => createThreadSelectorByRef(threadRef), [threadRef]));
-  const threadExists = useStore((store) => selectThreadByRef(store, threadRef) !== undefined);
+  const threadExists = useStore((store) => selectThreadExistsByRef(store, threadRef));
   const environmentHasServerThreads = useStore(
     (store) => selectEnvironmentState(store, threadRef?.environmentId ?? null).threadIds.length > 0,
   );
@@ -197,7 +197,26 @@ function ChatThreadRouteView() {
   const diffOpen = search.diff === "1";
   const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
   const appSettings = useSettings();
-  const [hasOpenedDiff, setHasOpenedDiff] = useState(diffOpen);
+  const currentThreadKey = threadRef ? `${threadRef.environmentId}:${threadRef.threadId}` : null;
+  const [diffPanelMountState, setDiffPanelMountState] = useState(() => ({
+    threadKey: currentThreadKey,
+    hasOpenedDiff: diffOpen,
+  }));
+  const hasOpenedDiff =
+    diffPanelMountState.threadKey === currentThreadKey
+      ? diffPanelMountState.hasOpenedDiff
+      : diffOpen;
+  const markDiffOpened = useCallback(() => {
+    setDiffPanelMountState((previous) => {
+      if (previous.threadKey === currentThreadKey && previous.hasOpenedDiff) {
+        return previous;
+      }
+      return {
+        threadKey: currentThreadKey,
+        hasOpenedDiff: true,
+      };
+    });
+  }, [currentThreadKey]);
   const closeDiff = useCallback(() => {
     if (!threadRef) {
       return;
@@ -212,6 +231,7 @@ function ChatThreadRouteView() {
     if (!threadRef) {
       return;
     }
+    markDiffOpened();
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(threadRef),
@@ -220,13 +240,7 @@ function ChatThreadRouteView() {
         return { ...rest, diff: "1" };
       },
     });
-  }, [navigate, threadRef]);
-
-  useEffect(() => {
-    if (diffOpen) {
-      setHasOpenedDiff(true);
-    }
-  }, [diffOpen]);
+  }, [markDiffOpened, navigate, threadRef]);
 
   useEmbeddedDraftThreadBootstrap({
     bootstrapComplete,
@@ -265,6 +279,8 @@ function ChatThreadRouteView() {
           <ChatView
             environmentId={threadRef.environmentId}
             threadId={threadRef.threadId}
+            onDiffPanelOpen={markDiffOpened}
+            reserveTitleBarControlInset={!diffOpen}
             routeKind="server"
           />
         </SidebarInset>
@@ -284,6 +300,7 @@ function ChatThreadRouteView() {
         <ChatView
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
+          onDiffPanelOpen={markDiffOpened}
           routeKind="server"
         />
       </SidebarInset>
